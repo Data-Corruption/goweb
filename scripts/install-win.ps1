@@ -6,6 +6,11 @@
 #   4. Checks if a Debian-based distribution is installed in WSL
 #   5. Executes the linux installation script with WSL
 
+# Set to false to skip the Debian-based distro check
+$enableDebianBasedCheck = $true
+
+# -----------------------------------------------------------------------------
+
 $linuxInstallScript = "install-linux.bash"
 $dataPath = [Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData)
 # $appName is dynamically set by the build script, if you wish to change it, do so there
@@ -58,25 +63,27 @@ Set-ExecutionPolicy RemoteSigned
 
 # Check if a Debian-based distribution is installed in WSL
 
-$debianBasedDistros = @("Ubuntu", "Debian", "kali-linux", "Pengwin")
-# Get the list of all installed WSL distributions, then convert it to an array in case there's only one
-$installedDistros = wsl --list --quiet
-$installedArray = @($installedDistros)
-# Search for a Debian-based distro in the list of installed distros
-$foundDebianBased = $false
-foreach ($distro in $debianBasedDistros) {
-  if ($installedArray -contains $distro) {
-    $foundDebianBased = $true
-    break
+if $enableDebianBasedCheck {
+  $debianBasedDistros = @("Ubuntu", "Debian", "kali-linux", "Pengwin")
+  # Get the list of all installed WSL distributions, then convert it to an array in case there's only one
+  $installedDistros = wsl --list --quiet
+  $installedArray = @($installedDistros)
+  # Search for a Debian-based distro in the list of installed distros
+  $foundDebianBased = $false
+  foreach ($distro in $debianBasedDistros) {
+    if ($installedArray -contains $distro) {
+      $foundDebianBased = $true
+      break
+    }
   }
-}
-# If no Debian-based distro was found, ask the user if they want to continue anyway
-if (-not $foundDebianBased) {
-  Write-Host "Failed to detect a Debian-based distribution installed in WSL."
-  $userChoice = Read-Host "Do you want to attempt the installation anyway? (y/n)"
-  if ($userChoice -ne "y") {
-    Write-Host "Exiting installation.."
-    exit 1
+  # If no Debian-based distro was found, ask the user if they want to continue anyway
+  if (-not $foundDebianBased) {
+    Write-Host "Failed to detect a Debian-based distribution installed in WSL."
+    $userChoice = Read-Host "Do you want to attempt the installation anyway? (y/n)"
+    if ($userChoice -ne "y") {
+      Write-Host "Exiting installation.."
+      exit 1
+    }
   }
 }
 

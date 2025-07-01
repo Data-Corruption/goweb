@@ -1,11 +1,15 @@
 #!/bin/bash
 
-APP_NAME="goweb" # Replace with app name
+# Replace with app name.
+APP_NAME="goweb"
 
-# Variables ===================================================================
+# Edit as needed. See https://pkg.go.dev/internal/platform for supported platforms
+SUPPORTED_PLATFORMS=("linux-amd64" "linux-arm64" "linux-riscv64")
+
+# -----------------------------------------------------------------------------
 
 DEBUG=false
-LDFLAGS="" # "-X 'main.Version=vX.X.X'"
+LDFLAGS="-X 'main.Version=${VERSION:-vX.X.X}'"
 PROJECT_ROOT=""
 BIN_DIR=""
 OUT_PATH=""
