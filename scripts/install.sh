@@ -1,37 +1,66 @@
 #!/usr/bin/env bash
-set -euo pipefail # exit on error
-trap 'rm -f "${response:-}" "${headers:-}" "${download_temp:-}" "${extracted_temp:-}" 2>/dev/null || true' EXIT
 
-# generic install script, assumes user has nothing installed yet, just base linux system
+# Generic install script, assumes user has base linux system, no deps for install.
+# Very simple and durable, for single bin apps targeting linux x86_64/amd64.
+# Might add non sudo support later, but this works for now.
 #
-# One‑liner (latest release):
+# Default (installs latest version to /usr/local/bin):
 #   curl -sSfL https://raw.githubusercontent.com/OWNER/REPO/main/install.sh | sudo bash
 #
-# Custom version or install directory:
-#   curl -sSfL https://raw.githubusercontent.com/OWNER/REPO/main/install.sh | VERSION=v1.2.3 INSTALL_DIR=/opt/bin sudo bash
+# With version and install dir override:
+#   curl -sSfL https://raw.githubusercontent.com/OWNER/REPO/main/install.sh | sudo bash -s -- [VERSION] [INSTALL_DIR]
 #
-# Positional args
+# Arguments:
 #   [VERSION]      Optional tag (e.g. v1.2.3). Default = latest
-#   [INSTALL_DIR]  Optional install dir. Default = /usr/local/bin
-#
-# sudo needed for copying bin to /usr/local/bin and setcap to allow binding to privileged ports (e.g. 80, 443)
+#   [INSTALL_DIR]  Optional install dir.       Default = /usr/local/bin
 
-OWNER="someuser"
-REPO="somerepo"
+# Template variables ----------------------------------------------------------
+
+# Replace with your GitHub repository details and app name
+OWNER="some-user"
+REPO="some-repo"
+APP_NAME="goweb"
 
 # startup ---------------------------------------------------------------------
 
-# parse args
-VERSION="${1:-${VERSION:-latest}}"
-INSTALL_DIR="${2:-${INSTALL_DIR:-/usr/local/bin}}"
+set -euo pipefail
+umask 022
+
+temp_dir=""
+cleanup() {
+  if [[ -d "$temp_dir" ]]; then
+    rm -rf "$temp_dir"
+  fi
+}
+
+install_path=""
+old_bin=""
+rollback() {
+  if [[ -f "$old_bin" ]]; then
+    echo "   Restoring old installation..."
+    mv "$old_bin" "$install_path" # if this or anything in rollback fails, no err handling, this is the err handling lmao
+  fi
+}
+
+trap '
+  status=$?
+  if [[ $status -ne 0 ]]; then
+    rollback
+  fi
+  cleanup
+  exit $status
+' EXIT
+
+DEFAULT_INSTALL_DIR="/usr/local/bin"
+VERSION="${1:-latest}"
+INSTALL_DIR="${2:-$DEFAULT_INSTALL_DIR}"
+BIN_ASSET_NAME="linux-amd64.gz"
 
 # ensure sudo
 if [[ $EUID -ne 0 ]]; then
-   echo "🔴 This script must be run as root (use sudo)"
+   echo "🔴 This script must be run as root (use sudo)" >&2
    exit 1
 fi
-
-# get os and arch -------------------------------------------------------------
 
 # detect platform
 uname_s=$(uname -s) # OS
@@ -39,160 +68,104 @@ uname_m=$(uname -m) # Architecture
 
 # if not linux, exit
 if [[ "$uname_s" != "Linux" ]]; then
-  echo "🔴 This script is only supported on Linux. Detected OS: $uname_s"
+  echo "🔴 This application is only supported on Linux. Detected OS: $uname_s" >&2
   exit 1
 fi
-goos="linux"
 
-# map Architecture → GOARCH
-case "$uname_m" in
-  x86_64|amd64)            goarch="amd64"  ;;
-  i386|i686)               goarch="386"    ;;
-  armv6l|armv7l|armv8l)    goarch="arm"    ;;
-  aarch64|arm64)           goarch="arm64"  ;;
-  ppc64)                   goarch="ppc64"  ;;
-  ppc64le)                 goarch="ppc64le";;
-  s390x)                   goarch="s390x"  ;;
-  riscv64)                 goarch="riscv64";;
-  mips)                    goarch="mips"   ;;
-  mipsle)                  goarch="mipsle" ;;
-  mips64)                  goarch="mips64" ;;
-  mips64le)                goarch="mips64le" ;;
-  sparc64)                 goarch="sparc64";;
-  loongarch64)             goarch="loong64";;
-  *)
-    echo "🔴 Unsupported/unknown architecture: $uname_m" >&2; exit 1 ;;
-esac
+# if not x86_64 or amd64 (some distros return this), exit
+if [[ "$uname_m" != "x86_64" && "$uname_m" != "amd64" ]]; then
+  echo "🔴 This application is only supported on x86_64/amd64. Detected architecture: $uname_m" >&2
+  exit 1
+fi
+
+# check if install dir exists
+if [[ ! -d "$INSTALL_DIR" ]]; then
+  echo "🔴 Install directory does not exist: $INSTALL_DIR
+  Please create it or specify a different directory." >&2
+  exit 1
+fi
+
+# check if  INSTALL_DIR is on the user’s PATH
+if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+  echo "🟡  $INSTALL_DIR isn't on your \$PATH."
+fi
+
+# dep check for bare bone distros
+required_bins=(curl gzip install) # setcap not in list cause it's not a thing on all distros and WSL
+for bin in "${required_bins[@]}"; do
+  if ! command -v "$bin" >/dev/null 2>&1; then
+    echo "error: '$bin' is required but not installed or not in \$PATH" >&2
+    exit 1
+  fi
+done
+
+# looks good, print info
+if [[ "$INSTALL_DIR" != "$DEFAULT_INSTALL_DIR" ]]; then
+  echo "📦 Installing $APP_NAME $VERSION to custom directory: $INSTALL_DIR ..."
+else
+  echo "📦 Installing $APP_NAME $VERSION ..."
+fi
 
 # download the binary ---------------------------------------------------------
 
-ARCHIVE_EXT=".gz"
-MATCH_SUFFIX="${goos}-${goarch}${ARCHIVE_EXT}"
-
-# Determine API URL based on version
+bin_url=""
 if [[ "$VERSION" == "latest" ]]; then
-  API_URL="https://api.github.com/repos/${OWNER}/${REPO}/releases/latest"
+  bin_url="https://github.com/${OWNER}/${REPO}/releases/latest/download/${BIN_ASSET_NAME}"
 else
-  API_URL="https://api.github.com/repos/${OWNER}/${REPO}/releases/tags/${VERSION}"
+  bin_url="https://github.com/${OWNER}/${REPO}/releases/download/${VERSION}/${BIN_ASSET_NAME}"
 fi
 
-# maybe use this in the future somehow, leaving it here for now
-AUTH_HEADER=""
-if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-  AUTH_HEADER="Authorization: token $GITHUB_TOKEN"
-fi
+install_path="$INSTALL_DIR/$APP_NAME"
+temp_dir=$(mktemp -d)
+dwld_out="${temp_dir}/${BIN_ASSET_NAME}"
+gzip_out="${dwld_out%.gz}"
 
-# fetch headers and body
-echo "📦 Fetching release data for $OWNER/$REPO (version: $VERSION)..."
-response=$(mktemp)
-headers=$(mktemp)
+# download the binary
+echo "Downloading $bin_url"
+curl --max-time 300 --retry 2 --retry-delay 2 --fail --show-error --location --progress-bar -o "$dwld_out" "$bin_url"
 
-if [[ -n "$AUTH_HEADER" ]]; then
-  curl -sSL -D "$headers" -H "$AUTH_HEADER" "$API_URL" -o "$response"
-else
-  curl -sSL -D "$headers" "$API_URL" -o "$response"
-fi
-
-# check status
-http_status=$(grep -E '^HTTP/[0-9.]+ [0-9]+' "$headers" | head -1 | awk '{print $2}')
-if [[ "$http_status" != "200" ]]; then
-  echo "🔴 Failed to fetch release data. HTTP status: $http_status"
-  cat "$response" >&2
+# extract the downloaded archive
+echo "Unzipping..."
+if ! gzip -d "$dwld_out"; then
+  echo "🔴 Failed to extract binary." >&2
   exit 1
 fi
 
-# rate limit check
-remaining=$(awk -F': ' '/^[Xx]-[Rr]ate[Ll]imit-[Rr]emaining:/ {print $2}' "$headers" | tr -d '\r')
-reset_epoch=$(awk -F': ' '/^[Xx]-[Rr]ate[Ll]imit-[Rr]eset:/ {print $2}' "$headers" | tr -d '\r')
+# backup existing install in case of failure
+old_bin=""
+if [[ -f "$install_path" ]]; then
+  old_bin="$temp_dir/$APP_NAME.old"
+  mv "$install_path" "$old_bin"
+fi
 
-if [[ "${remaining:-1}" -le 0 ]]; then
-  if command -v date >/dev/null 2>&1; then
-    reset_time=$(date -d "@$reset_epoch" +"%Y-%m-%d %H:%M:%S" 2>/dev/null || date -r "$reset_epoch" +"%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "timestamp: $reset_epoch")
-  else
-    reset_time="timestamp: $reset_epoch"
+# install the binary
+echo "Installing binary ..."
+if ! install -Dm755 "$gzip_out" "$install_path"; then
+  echo "🔴 Failed to install new binary." >&2
+  exit 1
+fi
+
+# helper to detect if running in WSL
+is_wsl() {
+  [[ -n ${WSL_DISTRO_NAME-} || -n ${WSL_INTEROP-} ]] && return 0
+  grep -qiE '(microsoft|wsl)' /proc/version 2>/dev/null # fallback for older WSL versions
+}
+
+# try to set privileged port capabilities
+if ! is_wsl; then # WSL doesn't support setcap
+  if command -v setcap >/dev/null 2>&1; then
+    setcap 'cap_net_bind_service=+ep' "$install_path" || {
+      echo "🟡 Warning: Failed to set capabilities on $install_path"
+      echo "   If needed for privileged ports (e.g. 80/443) aka http/https, run:"
+      echo "     sudo setcap 'cap_net_bind_service=+ep' $install_path"
+    }
   fi
-  echo "🔴 GitHub API rate limit exceeded. Limit should reset at $reset_time UTC."
+fi
+
+# test the bin
+if ! "$install_path" -v >/dev/null 2>&1; then
+  echo "🔴 Failed to verify installation of $install_path" >&2
   exit 1
 fi
 
-# extract all asset URLs and names
-assets=$(cat "$response" | tr -d '\n' | sed 's/}/}\n/g' | grep '"browser_download_url"' | sed 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1|\2/g')
-
-# find matching asset
-download_url=""
-asset_name=""
-while IFS='|' read -r name url; do
-  if [[ "$name" == *"-${MATCH_SUFFIX}" ]]; then
-    download_url="$url"
-    asset_name="$name"
-    break
-  fi
-done <<< "$assets"
-
-if [[ -z "$download_url" ]]; then
-  echo "🔴 No asset found matching pattern: *-${MATCH_SUFFIX}"
-  echo "   Expected format: example-${goos}-${goarch}.gz"
-  exit 1
-fi
-
-# extract app name from asset name (everything before the first dash)
-app_name=$(echo "$asset_name" | sed 's/-.*$//')
-
-# set target path
-target_path="$INSTALL_DIR/$app_name"
-
-# check if already installed 
-if [[ -f "$target_path" ]]; then
-    echo "⚠️  $app_name is already installed at $target_path"
-    read -p "   Overwrite? (y/N) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Installation cancelled."
-        exit 0
-    fi
-fi
-
-echo "📥 Downloading: $download_url"
-
-# download the asset
-download_temp=$(mktemp)
-if [[ -n "$AUTH_HEADER" ]]; then
-  curl -sSL -H "$AUTH_HEADER" "$download_url" -o "$download_temp"
-else
-  curl -sSL "$download_url" -o "$download_temp"
-fi
-
-# extract from .gz
-echo "📦 Extracting $app_name..."
-extracted_temp=$(mktemp)
-gunzip -c "$download_temp" > "$extracted_temp"
-
-# Create install directory if it doesn't exist
-if [[ ! -d "$INSTALL_DIR" ]]; then
-  echo "Creating install directory: $INSTALL_DIR"
-  mkdir -p "$INSTALL_DIR" || {
-    echo "🔴 Failed to create install directory."
-    exit 1
-  }
-fi
-
-# install the binary ----------------------------------------------------------
-
-echo "Installing to: $target_path"
-
-# try to move/copy the file
-if mv "$extracted_temp" "$target_path" 2>/dev/null || cp "$extracted_temp" "$target_path" 2>/dev/null; then
-  chmod +x "$target_path"
-  setcap 'cap_net_bind_service=+ep' "$target_path"
-else
-  echo "🔴 Failed to install."
-  exit 1
-fi
-
-if ! echo "$PATH" | grep -qF "$INSTALL_DIR"; then
-  echo "⚠️  Note: $INSTALL_DIR is not in your PATH"
-  echo "   Add it with: export PATH=\"$INSTALL_DIR:\$PATH\" or add it to your shell config file (e.g., ~/.bashrc, ~/.zshrc)"
-fi
-
-echo "🟢 Successfully installed! Run '$app_name -v' to verify."
-echo "   You may need to restart your terminal session first."
+echo "🟢 Successfully installed $APP_NAME $VERSION. Run $APP_NAME -v to verify."
