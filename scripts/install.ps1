@@ -6,8 +6,8 @@
 
 # Template variables ----------------------------------------------------------
 
-$OWNER="some-user"
-$REPO="some-repo"
+$OWNER="Data-Corruption"
+$REPO="goweb"
 $APP_NAME="goweb"
 
 # Startup ---------------------------------------------------------------------

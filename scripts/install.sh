@@ -20,8 +20,8 @@
 # Template variables ----------------------------------------------------------
 
 # Replace with your GitHub repository details and app name
-OWNER="some-user"
-REPO="some-repo"
+OWNER="Data-Corruption"
+REPO="goweb"
 APP_NAME="goweb"
 
 # Startup ---------------------------------------------------------------------
