@@ -1,8 +1,3 @@
-# Triggered by a push or pull to main branch, it automatically creates a 
-# release draft if the version in the CHANGELOG.md file is not already tagged 
-# in the repository. The draft includes the version and description from the
-# CHANGELOG.md file, and the release assets are the binaries and install scripts
-# for the target platforms.
 name: Build and Draft Release
 
 on:
@@ -12,83 +7,22 @@ on:
     branches: [ main ]
 
 jobs:
-  parse-changelog:
+  build-and-draft-release:
     runs-on: ubuntu-latest
-    outputs:
-      should_build: ${{ steps.check_version.outputs.should_build }}
-      version: ${{ steps.check_version.outputs.version }}
-      description: ${{ steps.check_version.outputs.description }}
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0 # Ensure all history and tags are fetched
-    - name: Extract Version and Description from docs/CHANGELOG.md
-      id: check_version
-      # Extract the most recent version and its description from the CHANGELOG.md file
-      # If the version is already tagged, it sets should_build to false
-      run: |
-        # Extract version and description
-        VERSION=$(sed -n 's/^## \[\(.*\)\] - .*/\1/p' docs/CHANGELOG.md | head -n 1)
-        DESCRIPTION=$(awk '/^## \['"$VERSION"'\]/ {flag=1; next} /^## \[/ {flag=0} flag {print}' docs/CHANGELOG.md)
-        # Escape newlines in the description, otherwise actions will freak out
-        DESCRIPTION_ESCAPED=$(echo "$DESCRIPTION" | sed ':a;N;$!ba;s/\n/\\n/g')
-
-        echo "VERSION: $VERSION"
-        echo "DESCRIPTION: $DESCRIPTION_ESCAPED"
-
-        # Check if the version is already tagged
-        if git tag -l "$VERSION" | grep -q "$VERSION"; then
-          echo "Version $VERSION is already tagged."
-          echo "should_build=false" >> $GITHUB_OUTPUT
-        else
-          echo "should_build=true" >> $GITHUB_OUTPUT
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "description=$DESCRIPTION_ESCAPED" >> $GITHUB_OUTPUT
-        fi
-          
-  build-and-release:
-    needs: parse-changelog
-    # If the version already exists as a tag, skip the build and release steps
-    if: needs.parse-changelog.outputs.should_build == 'true'
-    runs-on: ubuntu-latest
-    env:
-      VERSION: ${{ needs.parse-changelog.outputs.version }} # Used by the build script
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-go@v4
       with:
         go-version-file: 'go.mod'
-    - name: Unescape Description
-      run: |
-        echo "unescaped_description<<EOF" >> $GITHUB_ENV
-        echo "${{ needs.parse-changelog.outputs.description }}" | sed 's/\\n/\n/g' >> $GITHUB_ENV
-        echo "EOF" >> $GITHUB_ENV
-    - name: Make scripts/build.sh executable
-      run: chmod +x scripts/build.sh
-    - name: Build
-      # Build the binaries for target platforms
-      run: ./scripts/build.sh
-    - name: Set MOD_NAME
-      run: |
-        echo "MOD_NAME=$(awk -F' ' '/module/ {print $2}' go.mod)" >> $GITHUB_ENV
-    - name: Zip Release Files
-      # Now that the binaries are built, zip them along with the install scripts
-      run: |
-        zip -j ./${MOD_NAME}-linux-x64.zip ./bin/${MOD_NAME}/${MOD_NAME}-linux-amd64 ./scripts/install-linux.bash ./scripts/install-win.ps1
-        zip -j ./${MOD_NAME}-linux-arm64.zip ./bin/${MOD_NAME}/${MOD_NAME}-linux-arm64 ./scripts/install-linux.bash ./scripts/install-win.ps1
-        zip -j ./${MOD_NAME}-linux-riscv64.zip ./bin/${MOD_NAME}/${MOD_NAME}-linux-riscv64 ./scripts/install-linux.bash ./scripts/install-win.ps1
-      env:
-        MOD_NAME: ${{ env.MOD_NAME }}
-    - name: Create Release Draft
-      # Create a release draft with the version and description from the CHANGELOG.md file.
-      # The tag will be created and applied to the commit when you publish the release.
-      uses: softprops/action-gh-release@v1
+    - name: Build # also parses the CHANGELOG.md, sets DRAFT_RELEASE / VERSION, and writes the release body to a file
+      run: chmod +x scripts/build.sh && ./scripts/build.sh
+    - name: Draft Release
+      if: env.DRAFT_RELEASE == 'true'
+      uses: softprops/action-gh-release@v2
       with:
         draft: true
-        tag_name: ${{ needs.parse-changelog.outputs.version }}
-        name: Release ${{ needs.parse-changelog.outputs.version }}
-        body: ${{ env.unescaped_description }}
+        tag_name: ${{ env.VERSION }}
+        name: ${{ env.VERSION }}
+        body_path: ./bin/release_body.md
         fail_on_unmatched_files: true
-        files: './*.zip'
-      env:
-        MOD_NAME: ${{ env.MOD_NAME }}
+        files: './bin/*.gz'

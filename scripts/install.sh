@@ -2,17 +2,20 @@
 
 # Generic install script, assumes user has base linux system, no deps for install.
 # Very simple and durable, for single bin apps targeting linux x86_64/amd64.
-# Might add non sudo support later, but this works for now.
 #
 # Default (installs latest version to /usr/local/bin):
-#   curl -sSfL https://raw.githubusercontent.com/OWNER/REPO/main/install.sh | sudo bash
+#   curl -sSfL https://raw.githubusercontent.com/OWNER/REPO/main/install.sh | bash
 #
 # With version and install dir override:
-#   curl -sSfL https://raw.githubusercontent.com/OWNER/REPO/main/install.sh | sudo bash -s -- [VERSION] [INSTALL_DIR]
+#   curl -sSfL https://raw.githubusercontent.com/OWNER/REPO/main/install.sh | bash -s -- [VERSION] [INSTALL_DIR]
 #
 # Arguments:
 #   [VERSION]      Optional tag (e.g. v1.2.3). Default = latest
-#   [INSTALL_DIR]  Optional install dir.       Default = /usr/local/bin
+#   [INSTALL_DIR]  Optional install dir.       Default = root: /usr/local/bin, user: $HOME/.local/bin
+#
+# If app will need to bind to privileged ports (e.g. 80/443), non-wsl users may
+# need to run `sudo setcap 'cap_net_bind_service=+ep' install_path` after
+# running. The script will print the install_path so users can easily copy it.
 
 # Template variables ----------------------------------------------------------
 
@@ -21,7 +24,7 @@ OWNER="some-user"
 REPO="some-repo"
 APP_NAME="goweb"
 
-# startup ---------------------------------------------------------------------
+# Startup ---------------------------------------------------------------------
 
 set -euo pipefail
 umask 022
@@ -38,7 +41,7 @@ old_bin=""
 rollback() {
   if [[ -f "$old_bin" ]]; then
     echo "   Restoring old installation..."
-    mv "$old_bin" "$install_path" # if this or anything in rollback fails, no err handling, this is the err handling lmao
+    mv "$old_bin" "$install_path" || echo "   Warning: Failed to restore old binary"
   fi
 }
 
@@ -51,16 +54,16 @@ trap '
   exit $status
 ' EXIT
 
-DEFAULT_INSTALL_DIR="/usr/local/bin"
-VERSION="${1:-latest}"
-INSTALL_DIR="${2:-$DEFAULT_INSTALL_DIR}"
-BIN_ASSET_NAME="linux-amd64.gz"
-
-# ensure sudo
+# default install directory. root: /usr/local/bin, user: $HOME/.local/bin
+default_install_dir="/usr/local/bin"
 if [[ $EUID -ne 0 ]]; then
-   echo "🔴 This script must be run as root (use sudo)" >&2
-   exit 1
+  default_install_dir="$HOME/.local/bin"
+  mkdir -p "$default_install_dir"
 fi
+
+VERSION="${1:-latest}"
+INSTALL_DIR="${2:-$default_install_dir}"
+BIN_ASSET_NAME="linux-amd64.gz"
 
 # detect platform
 uname_s=$(uname -s) # OS
@@ -87,7 +90,7 @@ fi
 
 # check if  INSTALL_DIR is on the user’s PATH
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
-  echo "🟡  $INSTALL_DIR isn't on your \$PATH."
+  echo "🟡 WARNING! $INSTALL_DIR may not be on your \$PATH."
 fi
 
 # dep check for bare bone distros
@@ -100,13 +103,9 @@ for bin in "${required_bins[@]}"; do
 done
 
 # looks good, print info
-if [[ "$INSTALL_DIR" != "$DEFAULT_INSTALL_DIR" ]]; then
-  echo "📦 Installing $APP_NAME $VERSION to custom directory: $INSTALL_DIR ..."
-else
-  echo "📦 Installing $APP_NAME $VERSION ..."
-fi
+echo "📦 Installing $APP_NAME $VERSION to $INSTALL_DIR ..."
 
-# download the binary ---------------------------------------------------------
+# Download the binary ---------------------------------------------------------
 
 bin_url=""
 if [[ "$VERSION" == "latest" ]]; then
@@ -120,20 +119,21 @@ temp_dir=$(mktemp -d)
 dwld_out="${temp_dir}/${BIN_ASSET_NAME}"
 gzip_out="${dwld_out%.gz}"
 
-# download the binary
+# curl time! curl moment!
 echo "Downloading $bin_url"
-curl --max-time 300 --retry 2 --retry-delay 2 --fail --show-error --location --progress-bar -o "$dwld_out" "$bin_url"
+curl --max-time 300 --retry 2 --retry-all-errors --retry-delay 2 --fail --show-error --location --progress-bar -o "$dwld_out" "$bin_url"
 
-# extract the downloaded archive
+# unzip
 echo "Unzipping..."
 if ! gzip -d "$dwld_out"; then
-  echo "🔴 Failed to extract binary." >&2
+  echo "🔴 Failed to unzip binary." >&2
   exit 1
 fi
 
 # backup existing install in case of failure
 old_bin=""
 if [[ -f "$install_path" ]]; then
+  echo "   Backing up existing install in case of failure ..."
   old_bin="$temp_dir/$APP_NAME.old"
   mv "$install_path" "$old_bin"
 fi
@@ -145,27 +145,10 @@ if ! install -Dm755 "$gzip_out" "$install_path"; then
   exit 1
 fi
 
-# helper to detect if running in WSL
-is_wsl() {
-  [[ -n ${WSL_DISTRO_NAME-} || -n ${WSL_INTEROP-} ]] && return 0
-  grep -qiE '(microsoft|wsl)' /proc/version 2>/dev/null # fallback for older WSL versions
-}
-
-# try to set privileged port capabilities
-if ! is_wsl; then # WSL doesn't support setcap
-  if command -v setcap >/dev/null 2>&1; then
-    setcap 'cap_net_bind_service=+ep' "$install_path" || {
-      echo "🟡 Warning: Failed to set capabilities on $install_path"
-      echo "   If needed for privileged ports (e.g. 80/443) aka http/https, run:"
-      echo "     sudo setcap 'cap_net_bind_service=+ep' $install_path"
-    }
-  fi
-fi
-
 # test the bin
 if ! "$install_path" -v >/dev/null 2>&1; then
   echo "🔴 Failed to verify installation of $install_path" >&2
   exit 1
 fi
 
-echo "🟢 Successfully installed $APP_NAME $VERSION. Run $APP_NAME -v to verify."
+echo "🟢 Successfully installed $APP_NAME $VERSION to $install_path ! Run $APP_NAME -v to verify."

@@ -63,7 +63,7 @@ Set-ExecutionPolicy RemoteSigned
 
 # Check if a Debian-based distribution is installed in WSL
 
-if $enableDebianBasedCheck {
+if ($enableDebianBasedCheck) {
   $debianBasedDistros = @("Ubuntu", "Debian", "kali-linux", "Pengwin")
   # Get the list of all installed WSL distributions, then convert it to an array in case there's only one
   $installedDistros = wsl --list --quiet
