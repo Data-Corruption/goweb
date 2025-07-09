@@ -1,10 +1,5 @@
 # Transparent WSL app installation script for Windows
-# This script performs the following actions:
-#   1. Creates the directory %APPDATA%\$appName and adds it to the system PATH
-#   2. Creates the file %APPDATA%\$appName\$appName.ps1 and unblocks it
-#   3. Sets the execution policy to RemoteSigned
-#   4. Executes the linux installation script with WSL
-
+#
 # Default (installs latest version to /usr/local/bin in WSL):
 #   Set-ExecutionPolicy Bypass -Scope Process -Force; iex "& { $(irm https://raw.githubusercontent.com/OWNER/REPO/main/scripts/install.ps1) }"
 
