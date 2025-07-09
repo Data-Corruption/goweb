@@ -4,10 +4,10 @@
 # Very simple and durable, for single bin apps targeting linux x86_64/amd64.
 #
 # Default (installs latest version to /usr/local/bin):
-#   curl -sSfL https://raw.githubusercontent.com/OWNER/REPO/main/install.sh | bash
+#   curl -sSfL https://raw.githubusercontent.com/OWNER/REPO/main/scripts/install.sh | bash
 #
 # With version and install dir override:
-#   curl -sSfL https://raw.githubusercontent.com/OWNER/REPO/main/install.sh | bash -s -- [VERSION] [INSTALL_DIR]
+#   curl -sSfL https://raw.githubusercontent.com/OWNER/REPO/main/scripts/install.sh | bash -s -- [VERSION] [INSTALL_DIR]
 #
 # Arguments:
 #   [VERSION]      Optional tag (e.g. v1.2.3). Default = latest

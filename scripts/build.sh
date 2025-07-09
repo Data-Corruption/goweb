@@ -28,7 +28,7 @@ rm -rf "$BIN_DIR" && mkdir -p "$BIN_DIR"
 echo "🟢 Cleaned bin directory"
 
 # if running in CI, extract latest version and description from CHANGELOG.md, if tag already exists, flag and exit.
-if [[ "$CI_RUN" == "true" ]]; then
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
   echo "Building for CI..."
   version=$(sed -n 's/^## \[\(.*\)\] - .*/\1/p' CHANGELOG.md | head -n 1)
   description=$(awk '/^## \['"$version"'\]/ {flag=1; next} /^## \[/ {flag=0} flag {print}' CHANGELOG.md)
