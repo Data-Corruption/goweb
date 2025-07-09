@@ -4,4 +4,4 @@
 
 Added:
 
-- Minimal CI system for testing.
+- Minimal CI system for testing. :3
