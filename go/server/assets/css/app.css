@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+@source "../html";
+@source "../js";
+@source "../../templates";
+
+@plugin "@tailwindcss/typography";
+@plugin "daisyui" {
+  themes: light, dark --default;
+}
+
+@layer base {
+  @font-face {
+    font-family: 'ProggyVector';
+    font-style: normal;
+    font-weight: 400;
+    src: url('./ProggyVector.ttf') format('truetype');
+  }
+}
+
+@layer components {
+  .font-proggy {
+    font-family: 'ProggyVector', sans-serif;
+  }
+}
