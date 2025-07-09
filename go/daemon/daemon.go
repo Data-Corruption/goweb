@@ -560,7 +560,11 @@ func (m *DaemonManager) Restart(ctx context.Context) error {
 		fmt.Fprintf(os.Stderr, "Warning: Stop command failed: %v\n", stopErr)
 		// Check if it's the timeout error - prompt user to force kill
 		if strings.Contains(stopErr.Error(), "timeout waiting for daemon") {
-			if prompt.YesNo("Daemon did not stop gracefully. Force kill (SIGKILL) and continue restart?") {
+			force, err := prompt.YesNo("Daemon did not stop gracefully. Force kill (SIGKILL) and continue restart?")
+			if err != nil {
+				return fmt.Errorf("failed to read user input for force kill: %w", err)
+			}
+			if force {
 				killErr := m.Kill(ctx)
 				if killErr != nil {
 					return fmt.Errorf("failed to kill daemon during restart: %w", killErr)

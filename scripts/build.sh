@@ -10,8 +10,8 @@ APP_NAME="goweb"
 set -euo pipefail
 umask 022
 
-# dep check. Thanks to go's cross-compilation, we can skip the platform check and just do this.
-required_bins=(go sed awk gzip)
+# dep check. Thanks to go's cross-compilation, we can skip a platform check and just do this.
+required_bins=(go gcc sed awk gzip) # gcc for cgo
 for bin in "${required_bins[@]}"; do
   if ! command -v "$bin" >/dev/null 2>&1; then
     echo "error: '$bin' is required but not installed or not in \$PATH" >&2
@@ -56,7 +56,7 @@ GO_MAIN_PATH="./go/main"
 # - etc.
 
 # build
-build_command="GOOS=linux GOARCH=amd64 go build -ldflags=\"$LDFLAGS\" -o \"$BIN_DIR/linux-amd64\" \"$GO_MAIN_PATH\""
+build_command="GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -ldflags=\"$LDFLAGS\" -o \"$BIN_DIR/linux-amd64\" \"$GO_MAIN_PATH\""
 eval "$build_command"
 echo "🟢 Built $BIN_DIR/linux-amd64"
 

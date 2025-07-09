@@ -14,7 +14,7 @@ jobs:
     - uses: actions/setup-go@v4
       with:
         go-version-file: 'go.mod'
-    - name: Build # also parses the CHANGELOG.md, sets DRAFT_RELEASE / VERSION, and writes the release body to a file
+    - name: Build # if new and unused entry is in CHANGELOG.md, sets DRAFT_RELEASE=true, VERSION, and writes the release body to a file
       run: chmod +x scripts/build.sh && ./scripts/build.sh
     - name: Draft Release
       if: env.DRAFT_RELEASE == 'true'
