@@ -38,11 +38,11 @@ if (-not ($pathItems -contains $appDir.TrimEnd('\'))) {
 
 # write the bridge file to the app dir and unblock it
 $bridgeScriptContent = @"
-# Auto-generated script that bridges Windows to WSL for the app '`$appName'
+# Auto-generated script that bridges Windows to WSL for the app '`$APP_NAME'
 param(`$args)
 `$cwd = (Get-Location).Path
 `$wslCwd = wsl -- bash -c "wslpath '`$cwd'"
-wsl -- bash -c "cd `$wslCwd; $appName `$args"
+wsl -- bash -c "cd `$wslCwd; $APP_NAME `$args"
 "@
 
 Set-Content -Path $bridgeScript -Value $bridgeScriptContent
@@ -50,5 +50,3 @@ Unblock-File -Path $bridgeScript
 
 # execute linux install command in WSL
 wsl -- bash -c "$LINUX_INSTALL_CMD"
-
-Write-Host "Installation complete! Run `$appName -v` to verify. You may need to restart your terminal for the changes to take effect."
