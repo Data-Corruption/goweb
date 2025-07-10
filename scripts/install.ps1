@@ -12,7 +12,7 @@ $APP_NAME="goweb"
 
 # Startup ---------------------------------------------------------------------
 
-$LINUX_INSTALL_CMD = "curl -sSfL https://raw.githubusercontent.com/$OWNER/$REPO/main/scripts/install.sh | bash"
+$LINUX_INSTALL_CMD = "curl -sSfL https://raw.githubusercontent.com/$OWNER/$REPO/main/scripts/install.sh | sudo bash"
 $dataDir = [Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData)
 $appDir = Join-Path -Path $dataDir -ChildPath $APP_NAME
 $bridgeScript = Join-Path -Path $appDir -ChildPath "$APP_NAME.ps1"
