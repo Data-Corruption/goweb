@@ -44,6 +44,7 @@ if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
     echo "DRAFT_RELEASE=false" >> $GITHUB_ENV
     exit 0
   else
+    echo "Version $version is not tagged yet."
     echo "DRAFT_RELEASE=true" >> $GITHUB_ENV
     echo "VERSION=$version" >> $GITHUB_ENV
   fi
