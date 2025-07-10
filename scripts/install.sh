@@ -133,7 +133,7 @@ fi
 # backup existing install in case of failure
 old_bin=""
 if [[ -f "$install_path" ]]; then
-  echo "   Backing up existing install in case of failure ..."
+  echo "Backing up existing install in case of failure ..."
   old_bin="$temp_dir/$APP_NAME.old"
   mv "$install_path" "$old_bin"
 fi
