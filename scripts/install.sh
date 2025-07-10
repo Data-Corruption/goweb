@@ -88,11 +88,6 @@ if [[ ! -d "$INSTALL_DIR" ]]; then
   exit 1
 fi
 
-# check if  INSTALL_DIR is on the user’s PATH
-if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
-  echo "🟡 WARNING! $INSTALL_DIR may not be on your \$PATH."
-fi
-
 # dep check for bare bone distros
 required_bins=(curl gzip install) # setcap not in list cause it's not a thing on all distros and WSL
 for bin in "${required_bins[@]}"; do
@@ -104,6 +99,11 @@ done
 
 # looks good, print info
 echo "📦 Installing $APP_NAME $VERSION to $INSTALL_DIR ..."
+
+# check if  INSTALL_DIR is on the user’s PATH
+if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+  echo "🟡 WARNING! $INSTALL_DIR may not be on your \$PATH."
+fi
 
 # Download the binary ---------------------------------------------------------
 
@@ -151,4 +151,5 @@ if ! "$install_path" -v >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "🟢 Successfully installed $APP_NAME $VERSION to $install_path ! Run $APP_NAME -v to verify."
+echo "🟢 Successfully installed $APP_NAME $VERSION to $install_path !"
+echo "   Run $APP_NAME -v to verify. You may need to restart your terminal."
