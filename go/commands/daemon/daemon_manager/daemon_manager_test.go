@@ -1,4 +1,4 @@
-package daemon
+package daemon_manager
 
 // Super basic tests, mainly for just utilities, still don't have any involving inter-process stuff
 
