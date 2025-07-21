@@ -1,12 +1,6 @@
 package update
 
-import (
-	"context"
-	"goweb/go/system/git"
-	"time"
-
-	"golang.org/x/mod/semver"
-)
+/*
 
 // Update checks if there is a newer version of the tool available.
 // If a newer version is available, it prompts the user to update.
@@ -26,3 +20,5 @@ func Update(repoURL string) error {
 
 	return nil
 }
+
+*/

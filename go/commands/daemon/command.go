@@ -26,23 +26,14 @@ var Command = &cli.Command{
 			Name:  "start",
 			Usage: "start the daemon as a background process",
 			Action: func(ctx context.Context, cmd *cli.Command) error {
-				if err := manager.Start(ctx); err != nil {
-					return err
-				}
-				fmt.Println("Daemon started successfully.")
-				return nil
+				return manager.Start(ctx)
 			},
 		},
 		{
 			Name:  "status",
 			Usage: "check the status of the daemon",
 			Action: func(ctx context.Context, cmd *cli.Command) error {
-				status, err := manager.Status(ctx)
-				if err != nil {
-					return err
-				}
-				fmt.Println("Daemon status:", status)
-				return nil
+				return manager.Status(ctx)
 			},
 		},
 		{
@@ -58,33 +49,14 @@ var Command = &cli.Command{
 			Name:  "restart",
 			Usage: "restart the daemon",
 			Action: func(ctx context.Context, cmd *cli.Command) error {
-				if err := manager.Restart(ctx); err != nil {
-					return err
-				}
-				fmt.Println("Daemon restarted successfully.")
-				return nil
+				return manager.Restart(ctx)
 			},
 		},
 		{
 			Name:  "stop",
 			Usage: "stop the daemon",
 			Action: func(ctx context.Context, cmd *cli.Command) error {
-				if err := manager.Stop(ctx); err != nil {
-					return err
-				}
-				fmt.Println("Daemon stopped successfully.")
-				return nil
-			},
-		},
-		{
-			Name:  "kill",
-			Usage: "kill the daemon",
-			Action: func(ctx context.Context, cmd *cli.Command) error {
-				if err := manager.Kill(ctx); err != nil {
-					return err
-				}
-				fmt.Println("Daemon killed successfully.")
-				return nil
+				return manager.Stop(ctx)
 			},
 		},
 	},

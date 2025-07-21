@@ -7,7 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"goweb/go/daemon"
+	"goweb/go/commands/daemon"
+	"goweb/go/commands/daemon/daemon_manager"
 	"goweb/go/storage/config"
 	"goweb/go/storage/database"
 	"goweb/go/storage/storagepath"
@@ -125,20 +126,15 @@ func startup(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 	}
 
 	// Init daemon manager
-	port, err := config.Get[int](ctx, "port")
-	if err != nil {
-		return ctx, fmt.Errorf("failed to get port from config: %w", err)
+	manager := &daemon_manager.DaemonManager{
+		PIDFilePath:   filepath.Join(storagePath, "daemon.pid"),
+		ReadyTimeout:  10 * time.Second,
+		StopTimeout:   5 * time.Second,
+		DaemonRunArgs: []string{"daemon", "run"},
 	}
-	cfg := daemon.Config{
-		PIDFilePath:    filepath.Join(storagePath, "daemon.pid"),
-		ReadyTimeout:   10 * time.Second,
-		StopTimeout:    5 * time.Second,
-		DaemonRunArgs:  []string{"daemon", "run"},
-		HealthCheckURL: fmt.Sprintf("localhost:%d/health", port),
-	}
-	daemon.Manager, err = daemon.New(cfg)
+	ctx, err = daemon_manager.IntoContext(ctx, manager)
 	if err != nil {
-		return ctx, fmt.Errorf("failed to initialize daemon manager: %w", err)
+		return ctx, fmt.Errorf("failed to insert daemon manager into context: %w", err)
 	}
 
 	// Init other components

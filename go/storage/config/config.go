@@ -234,7 +234,10 @@ func (cfg *Config) Migrate() error {
 		}
 
 		// check if version is the latest
-		discVersion := string(buf)
+		var discVersion string
+		if err := json.Unmarshal(buf, &discVersion); err != nil {
+			return fmt.Errorf("failed to unmarshal configuration version: %w", err)
+		}
 		if discVersion == cfg.Version {
 			return nil
 		}
