@@ -14,6 +14,7 @@ package daemon_manager
 // - Command funcs handle console output directly. Doing everything via return values would be too rigid.
 // - When testing, make a manager per test, override binPath in start_internal() to point to a test binary.
 // - flock instead of lmdb so it's more portable.
+// - not meant for long-running management, just for single action then exit.
 
 import (
 	"context"
@@ -410,6 +411,7 @@ func (m *DaemonManager) stop(ctx context.Context, p *os.Process) error {
 	done := make(chan error, 1)
 	go func() {
 		// check if the process is still running via status every 500ms
+		// Can't use p.Wait() because that only works with children of the current process.
 		for {
 			if running, err := status(p.Pid); err != nil {
 				done <- fmt.Errorf("failed to check if process %d is running: %w", p.Pid, err)
