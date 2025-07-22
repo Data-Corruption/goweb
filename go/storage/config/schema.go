@@ -26,16 +26,15 @@ type schema map[string]valueInterface
 // and migration funcs for it in `migration.go`. The newest version is assumed to be the current version.
 var SchemaRecord = map[string]schema{
 	"v1.0.0": {
-		"version":           &value[string]{"v1.0.0"},
-		"logLevel":          &value[string]{"error"},
-		"port":              &value[int]{8080},
-		"proxyList":         &value[[]string]{[]string{}}, // leave empty for no proxy
-		"tls":               &value[string]{"false"},      // options: "false", "true", "proxy" // if proxy then assumes proxy is terminating TLS and traffic is secure
-		"tlsKeyPath":        &value[string]{""},
-		"tlsCertPath":       &value[string]{""},
-		"lastUpdateCheck":   &value[string]{time.Now().Format(time.RFC3339)},
-		"updateAvailable":   &value[bool]{false},
-		"enableUpdateCheck": &value[bool]{true},
+		"version":         &value[string]{"v1.0.0"},
+		"logLevel":        &value[string]{"warn"},
+		"port":            &value[int]{8080},
+		"useTLS":          &value[bool]{false},
+		"tlsKeyPath":      &value[string]{""},
+		"tlsCertPath":     &value[string]{""},
+		"updateNotify":    &value[bool]{true},
+		"lastUpdateCheck": &value[string]{time.Now().Format(time.RFC3339)},
+		"updateAvailable": &value[bool]{false},
 	},
 	/*
 		"v0.0.2": {

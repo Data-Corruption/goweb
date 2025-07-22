@@ -8,13 +8,13 @@
 //  1. Creates a DaemonManager, use IntoContext(), place it in the urfave/cli app context.
 //  2. Add the command from ../command.go to the urfave/cli app.
 //  3. Modify the server in ../command.go as needed.
-package daemon_manager
-
+//
 // Impl notes:
-// - Command funcs handle console output directly. Doing everything via return values would be too rigid.
-// - When testing, make a manager per test, override binPath in start_internal() to point to a test binary.
-// - flock instead of lmdb so it's more portable.
-// - not meant for long-running management, just for single action then exit.
+//   - Command funcs handle console output directly. Doing everything via return values would be too rigid.
+//   - When testing, make a manager per test, override binPath in start_internal() to point to a test binary.
+//   - flock instead of just PID in lmdb so it's more portable.
+//   - not meant for long-running management, just for single action then exit.
+package daemon_manager
 
 import (
 	"context"
@@ -248,7 +248,6 @@ func (m *DaemonManager) start(ctx context.Context, binPath string) error {
 	cmd := exec.Command(binPath, m.DaemonRunArgs...)
 	cmd.ExtraFiles = []*os.File{w} // pass write end to child as FD 3
 	cmd.Env = append(os.Environ(), "START_NOTIFY=1")
-	cmd.Stdin = nil
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // detach completely
 
 	err = cmd.Start()
