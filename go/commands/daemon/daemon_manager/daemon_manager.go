@@ -35,7 +35,7 @@ type contextKey string
 
 const (
 	READY_FD       = 3 // file descriptor for the readiness pipe in the child process.
-	PID_FILE_PERMS = 0o644
+	PID_FILE_PERMS = 0o600
 
 	CTX_KEY contextKey = "daemon_manager"
 )
@@ -104,7 +104,7 @@ func (m *DaemonManager) validate() error {
 func (m *DaemonManager) lockPID(ctx context.Context) error {
 	var err error
 	if m.pidFile == nil {
-		m.pidFile, err = os.OpenFile(m.PIDFilePath, os.O_CREATE|os.O_RDWR, 0o600)
+		m.pidFile, err = os.OpenFile(m.PIDFilePath, os.O_CREATE|os.O_RDWR, PID_FILE_PERMS)
 		if err != nil {
 			return fmt.Errorf("failed to open PID file %s: %w", m.PIDFilePath, err)
 		}
@@ -132,6 +132,9 @@ func (m *DaemonManager) unlockPID(ctx context.Context) {
 func (m *DaemonManager) readPID() (int, error) {
 	if m.pidFile == nil {
 		return 0, fmt.Errorf("PID file %s is not open", m.PIDFilePath)
+	}
+	if _, err := m.pidFile.Seek(0, io.SeekStart); err != nil {
+		return 0, fmt.Errorf("failed to seek PID file %s: %w", m.PIDFilePath, err)
 	}
 	data, err := io.ReadAll(m.pidFile)
 	if err != nil {
@@ -410,8 +413,10 @@ func (m *DaemonManager) stop(ctx context.Context, p *os.Process) error {
 		for {
 			if running, err := status(p.Pid); err != nil {
 				done <- fmt.Errorf("failed to check if process %d is running: %w", p.Pid, err)
+				return
 			} else if !running {
 				done <- nil
+				return
 			}
 			time.Sleep(500 * time.Millisecond)
 		}
