@@ -101,6 +101,8 @@ func startup(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 	ctx = xlog.IntoContext(ctx, log)
 	cleanUpFuncs = append(cleanUpFuncs, log.Close)
 
+	xlog.Debugf(ctx, "Starting %s, version: %s, storage path: %s", name, Version, storagePath)
+
 	// Init Database
 	db, err := database.New(ctx)
 	if err != nil {
@@ -109,33 +111,38 @@ func startup(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 	ctx = database.IntoContext(ctx, db)
 	dbClose := func() error { db.Close(); return nil }
 	cleanUpFuncs = append(cleanUpFuncs, dbClose)
+	xlog.Debug(ctx, "Database initialized")
 
 	// Init Config
 	ctx, err = config.Init(ctx)
 	if err != nil {
 		return ctx, fmt.Errorf("failed to initialize config: %w", err)
 	}
+	xlog.Debug(ctx, "Config initialized")
 
 	// Set log level
-	cfgLogLevel, err := config.Get[string](ctx, "logLevel")
-	if err != nil {
-		return ctx, fmt.Errorf("failed to get log level from config: %w", err)
-	}
-	if err := log.SetLevel(cfgLogLevel); err != nil {
-		return ctx, fmt.Errorf("failed to set log level: %w", err)
+	if initLogLevel != "debug" {
+		cfgLogLevel, err := config.Get[string](ctx, "logLevel")
+		if err != nil {
+			return ctx, fmt.Errorf("failed to get log level from config: %w", err)
+		}
+		if err := log.SetLevel(cfgLogLevel); err != nil {
+			return ctx, fmt.Errorf("failed to set log level: %w", err)
+		}
 	}
 
 	// Init daemon manager
 	manager := &daemon_manager.DaemonManager{
 		PIDFilePath:   filepath.Join(storagePath, "daemon.pid"),
 		ReadyTimeout:  10 * time.Second,
-		StopTimeout:   5 * time.Second,
+		StopTimeout:   10 * time.Second,
 		DaemonRunArgs: []string{"daemon", "run"},
 	}
 	ctx, err = daemon_manager.IntoContext(ctx, manager)
 	if err != nil {
 		return ctx, fmt.Errorf("failed to insert daemon manager into context: %w", err)
 	}
+	xlog.Debug(ctx, "Daemon manager initialized")
 
 	// Init other components
 
@@ -146,7 +153,7 @@ func cleanup() {
 	// call clean up funcs in reverse order
 	for i := len(cleanUpFuncs) - 1; i >= 0; i-- {
 		if err := cleanUpFuncs[i](); err != nil {
-			fmt.Printf("Failed to clean up: %v", err)
+			fmt.Fprintf(os.Stderr, "Failed to clean up: %v\n", err)
 		}
 	}
 }
