@@ -104,11 +104,11 @@ func update(ctx context.Context, version string) error {
 				fmt.Println("Update aborted. Please run the command with sudo to update.")
 				return nil
 			}
-		}
-		// if not "$HOME/.local/bin"
-		if filepath.Dir(selfPath) != filepath.Join(os.Getenv("HOME"), ".local", "bin") {
-			if runSudo, err = prompt.YesNo("Unsure if sudo is required. Do you want to run the update with sudo?"); err != nil {
-				return fmt.Errorf("failed to prompt for sudo: %w", err)
+		} else {
+			if filepath.Dir(selfPath) != filepath.Join(os.Getenv("HOME"), ".local", "bin") {
+				if runSudo, err = prompt.YesNo("Unsure if sudo is required. Do you want to run the update with sudo?"); err != nil {
+					return fmt.Errorf("failed to prompt for sudo: %w", err)
+				}
 			}
 		}
 	}

@@ -203,11 +203,11 @@ func NotifyReady(ctx context.Context) error {
 
 // Start launches the application as a daemon.
 func (m *DaemonManager) Start(ctx context.Context) error {
-	selfPath, err := os.Executable()
+	self, err := getSelfPath(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get executable path: %w", err)
 	}
-	return m.start(ctx, selfPath)
+	return m.start(ctx, self)
 }
 
 // start launches the application as a daemon.
@@ -224,7 +224,7 @@ func (m *DaemonManager) start(ctx context.Context, binPath string) error {
 		return fmt.Errorf("failed to read PID file %s: %w", m.PIDFilePath, err)
 	} else if pid != 0 {
 		// check if the process is running / is our binary
-		if running, err := status(pid); err != nil {
+		if running, err := status(ctx, pid); err != nil {
 			return fmt.Errorf("failed to check if process %d is running our binary: %w", pid, err)
 		} else if !running {
 			xlog.Errorf(ctx, "Process with PID %d is not running or a different binary. Cleaning stale PID file...", pid)
@@ -318,7 +318,7 @@ func (m *DaemonManager) Status(ctx context.Context) error {
 	}
 
 	// check if the process is running / is our binary
-	if running, err := status(pid); err != nil {
+	if running, err := status(ctx, pid); err != nil {
 		return fmt.Errorf("failed to check if process %d is running our binary: %w", pid, err)
 	} else if !running {
 		xlog.Errorf(ctx, "Process with PID %d is not running or a different binary. Cleaning stale PID file...", pid)
@@ -349,7 +349,7 @@ func (m *DaemonManager) Stop(ctx context.Context) error {
 	}
 
 	// check if the process is running / is our binary
-	if running, err := status(pid); err != nil {
+	if running, err := status(ctx, pid); err != nil {
 		return fmt.Errorf("failed to check if process %d is running our binary: %w", pid, err)
 	} else if !running {
 		xlog.Errorf(ctx, "Process with PID %d is not running or a different binary. Cleaning stale PID file...", pid)
@@ -412,7 +412,7 @@ func (m *DaemonManager) stop(ctx context.Context, p *os.Process) error {
 		// check if the process is still running via status every 500ms
 		// Can't use p.Wait() because that only works with children of the current process.
 		for {
-			if running, err := status(p.Pid); err != nil {
+			if running, err := status(ctx, p.Pid); err != nil {
 				done <- fmt.Errorf("failed to check if process %d is running: %w", p.Pid, err)
 				return
 			} else if !running {
@@ -437,7 +437,7 @@ func (m *DaemonManager) stop(ctx context.Context, p *os.Process) error {
 // status checks if the process with the given PID is running the same
 // executable path as the current process. This is Linux-specific (/proc).
 // Returns true if the process is running our binary, false if not running or different binary.
-func status(pid int) (bool, error) {
+func status(ctx context.Context, pid int) (bool, error) {
 	if pid <= 0 {
 		return false, nil
 	}
@@ -451,7 +451,7 @@ func status(pid int) (bool, error) {
 		return false, fmt.Errorf("failed to read link %s: %w", exePath, err)
 	}
 
-	self, err := os.Executable()
+	self, err := getSelfPath(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to get executable path: %w", err)
 	}
@@ -464,4 +464,25 @@ func status(pid int) (bool, error) {
 		return self == target, nil // raw path fallback
 	}
 	return selfReal == targetReal, nil
+}
+
+func getSelfPath(ctx context.Context) (string, error) {
+	bin, err := exec.LookPath(filepath.Base(os.Args[0]))
+	if err != nil {
+		// fallback
+		bin, err = os.Executable()
+		if err != nil {
+			return "", fmt.Errorf("failed to determine binary path: %w", err)
+		}
+	}
+	xlog.Debugf(ctx, "Look / fallback binary path: %s", bin)
+	if strings.HasSuffix(bin, ".old") {
+		fmt.Println("Error: Resolved old binary path, you'll need to run daemon restart manually.")
+		return "", fmt.Errorf("resolved old binary path: %s", bin)
+	}
+	if real, err := filepath.EvalSymlinks(bin); err == nil {
+		bin = real
+	}
+	xlog.Debugf(ctx, "Resolved binary path: %s", bin)
+	return bin, nil
 }

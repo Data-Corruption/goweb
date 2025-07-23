@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.0.4] - 2025-07-23
+
+Fixed:
+
+- Update system
+    - removed unnecessary dual sudo prompt
+    - fixed path resolve for update case
+
 ## [v0.0.3] - 2025-07-23
 
 Removed:
