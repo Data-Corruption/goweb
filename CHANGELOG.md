@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.0.3] - 2025-07-23
+
+Removed:
+
+- Unused crypto.go file.
+
+This is also so i can test if the update stuff works.
+
 ## [v0.0.2] - 2025-07-23
 
 Added:
