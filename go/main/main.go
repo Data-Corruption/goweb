@@ -10,6 +10,7 @@ import (
 	"goweb/go/commands/daemon"
 	"goweb/go/commands/daemon/daemon_manager"
 	"goweb/go/commands/database"
+	"goweb/go/commands/update"
 	"goweb/go/storage/config"
 	"goweb/go/storage/storagepath"
 
@@ -44,6 +45,7 @@ func main() {
 			},
 		},
 		Commands: []*cli.Command{
+			update.Command,
 			database.Command,
 			daemon.Command,
 		},
@@ -66,6 +68,9 @@ func main() {
 }
 
 func startup(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+	// insert version into context under "appVersion"
+	ctx = context.WithValue(ctx, "appVersion", Version)
+
 	// Set storage path
 	var err error
 	ctx, err = storagepath.Init(ctx, cmd.String("storage"), name)
@@ -113,6 +118,41 @@ func startup(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 		}
 		if err := log.SetLevel(cfgLogLevel); err != nil {
 			return ctx, fmt.Errorf("failed to set log level: %w", err)
+		}
+	}
+
+	// Update check
+	updateNotify, err := config.Get[bool](ctx, "updateNotify")
+	if err != nil {
+		return ctx, fmt.Errorf("failed to get updateNotify from config: %w", err)
+	}
+	if updateNotify {
+		// get last update check time from config
+		tStr, err := config.Get[string](ctx, "lastUpdateCheck")
+		if err != nil {
+			return ctx, fmt.Errorf("failed to get lastUpdateCheck from config: %w", err)
+		}
+		t, err := time.Parse(time.RFC3339, tStr)
+		if err != nil {
+			return ctx, fmt.Errorf("failed to parse lastUpdateCheck time: %w", err)
+		}
+
+		// once a day, very lightweight check, to be polite to github
+		if time.Since(t) > 24*time.Hour {
+			xlog.Debug(ctx, "Checking for updates...")
+
+			// update check time in config
+			if err := config.Set(ctx, "lastUpdateCheck", time.Now().Format(time.RFC3339)); err != nil {
+				return ctx, fmt.Errorf("failed to set lastUpdateCheck in config: %w", err)
+			}
+
+			updateAvailable, err := update.Check(ctx, Version)
+			if err != nil {
+				return ctx, fmt.Errorf("failed to check for updates: %w", err)
+			}
+			if updateAvailable {
+				fmt.Println("Update available! Run 'goweb update check' to see details.")
+			}
 		}
 	}
 
