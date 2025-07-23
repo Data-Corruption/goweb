@@ -17,10 +17,14 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+// Template variables ---------------------------------------------------------
+
 const (
 	RepoURL          = "https://github.com/Data-Corruption/goweb.git"
 	InstallScriptURL = "https://raw.githubusercontent.com/Data-Corruption/goweb/main/scripts/install.sh"
 )
+
+// ----------------------------------------------------------------------------
 
 // Check checks if there is a newer version of the application available and updates the config accordingly.
 // It returns true if an update is available, false otherwise.

@@ -18,8 +18,12 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// used for root command name and default storage path
-const name = "goweb"
+// Template variables ---------------------------------------------------------
+
+// Replace with your application name
+const Name = "goweb" // used for root command name and also in default storage path
+
+// ----------------------------------------------------------------------------
 
 // Version set by build script
 var Version string
@@ -29,10 +33,10 @@ var cleanUpFuncs []func() error
 func main() {
 	defer cleanup()
 	app := &cli.Command{
-		Name:        name,
+		Name:        Name,
 		Usage:       "example CLI application with web capabilities",
 		Version:     Version,
-		Description: name + " is a CLI application that provides web capabilities and various commands to manage the application.",
+		Description: Name + " is a CLI application that provides web capabilities and various commands to manage the application.",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:    "verbose",
@@ -41,7 +45,7 @@ func main() {
 			},
 			&cli.StringFlag{
 				Name:  "storage",
-				Usage: "override storage `DIR`. Default is ~/." + name,
+				Usage: "override storage `DIR`. Default is ~/." + Name,
 			},
 		},
 		Commands: []*cli.Command{
@@ -73,7 +77,7 @@ func startup(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 
 	// Set storage path
 	var err error
-	ctx, err = storagepath.Init(ctx, cmd.String("storage"), name)
+	ctx, err = storagepath.Init(ctx, cmd.String("storage"), Name)
 	if err != nil {
 		return ctx, fmt.Errorf("failed to initialize storage path: %w", err)
 	}
@@ -91,7 +95,7 @@ func startup(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 	ctx = xlog.IntoContext(ctx, log)
 	cleanUpFuncs = append(cleanUpFuncs, log.Close)
 
-	xlog.Debugf(ctx, "Starting %s, version: %s, storage path: %s", name, Version, storagePath)
+	xlog.Debugf(ctx, "Starting %s, version: %s, storage path: %s", Name, Version, storagePath)
 
 	// Init Database
 	db, err := database.New(ctx)
