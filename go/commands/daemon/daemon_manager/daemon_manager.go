@@ -457,13 +457,11 @@ func status(ctx context.Context, pid int) (bool, error) {
 	}
 
 	// resolve symlinks
-	selfReal, errSelf := filepath.EvalSymlinks(self)
 	targetReal, errTarget := filepath.EvalSymlinks(target)
-
-	if errSelf != nil || errTarget != nil {
+	if errTarget != nil {
 		return self == target, nil // raw path fallback
 	}
-	return selfReal == targetReal, nil
+	return self == targetReal, nil
 }
 
 func getSelfPath(ctx context.Context) (string, error) {

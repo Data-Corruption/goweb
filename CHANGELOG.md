@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.0.6] - 2025-07-23
+
+Removed:
+
+- Unnecessary double sym link eval on path in daemon manager status()
+
 ## [v0.0.5] - 2025-07-23
 
 Testing update systems
