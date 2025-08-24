@@ -1,4 +1,4 @@
-package evil
+package x
 
 // Fine, I’ll do it myself...
 func Ternary[T any](condition bool, trueValue, falseValue T) T {

@@ -1,4 +1,4 @@
-name: Build and Draft Release
+name: Build / Release
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  build-and-draft-release:
+  build-release:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4

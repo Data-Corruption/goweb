@@ -4,15 +4,16 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
-	"goweb/go/commands/daemon"
-	"goweb/go/commands/daemon/daemon_manager"
 	"goweb/go/commands/database"
 	"goweb/go/commands/update"
 	"goweb/go/storage/config"
 	"goweb/go/storage/storagepath"
+	"goweb/go/version"
 
 	"github.com/Data-Corruption/stdx/xlog"
 	"github.com/urfave/cli/v3"
@@ -25,120 +26,93 @@ const Name = "goweb" // used for root command name and also in default storage p
 
 // ----------------------------------------------------------------------------
 
+const (
+	DefaultLogLevel = "warn"
+	DataPath        = "/var/lib/" + Name
+)
+
 // Version set by build script
 var Version string
 
-var cleanUpFuncs []func() error
+func main() { os.Exit(run()) }
 
-func main() {
-	defer cleanup()
-	app := &cli.Command{
-		Name:        Name,
-		Usage:       "example CLI application with web capabilities",
-		Version:     Version,
-		Description: Name + " is a CLI application that provides web capabilities and various commands to manage the application.",
-		Flags: []cli.Flag{
-			&cli.BoolFlag{
-				Name:    "verbose",
-				Aliases: []string{"vb"},
-				Usage:   "enable verbose output",
-			},
-			&cli.StringFlag{
-				Name:  "storage",
-				Usage: "override storage `DIR`. Default is ~/." + Name,
-			},
-		},
-		Commands: []*cli.Command{
-			update.Command,
-			database.Command,
-			daemon.Command,
-		},
-		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
-			return startup(ctx, cmd)
-		},
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			// Default action when no subcommand is provided, replace this if desired
-			if cmd.Bool("verbose") {
-				fmt.Println("Verbose mode enabled")
-			}
-			fmt.Println("No command provided. Use --help or -h for help.")
-			return nil
-		},
+func run() int {
+	// base context with interrupt/termination handling
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// insert version for update stuff
+	ctx = version.IntoContext(ctx, Version)
+
+	// if missing data dir, exit
+	if _, err := os.Stat(DataPath); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "data path does not exist: %s\n", DataPath)
+		return 1
+	}
+	ctx = storagepath.IntoContext(ctx, DataPath)
+
+	// get log path
+	logPath := filepath.Join(DataPath, "logs")
+	if err := os.MkdirAll(logPath, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create log path: %s\n", err)
+		return 1
 	}
 
-	if err := app.Run(context.Background(), os.Args); err != nil {
-		fmt.Println(err)
-	}
-}
-
-func startup(ctx context.Context, cmd *cli.Command) (context.Context, error) {
-	// insert version into context under "appVersion"
-	ctx = context.WithValue(ctx, "appVersion", Version)
-
-	// Set storage path
-	var err error
-	ctx, err = storagepath.Init(ctx, cmd.String("storage"), Name)
+	// init logger
+	log, err := xlog.New(logPath, DefaultLogLevel)
 	if err != nil {
-		return ctx, fmt.Errorf("failed to initialize storage path: %w", err)
-	}
-	storagePath := storagepath.FromContext(ctx)
-
-	// Init Logger
-	initLogLevel := "none"
-	if cmd.Bool("verbose") {
-		initLogLevel = "debug"
-	}
-	log, err := xlog.New(filepath.Join(storagePath, "logs"), initLogLevel)
-	if err != nil {
-		return ctx, fmt.Errorf("failed to initialize logger: %w", err)
+		fmt.Fprintf(os.Stderr, "failed to initialize logger: %s\n", err)
+		return 1
 	}
 	ctx = xlog.IntoContext(ctx, log)
-	cleanUpFuncs = append(cleanUpFuncs, log.Close)
+	defer log.Close()
 
-	xlog.Debugf(ctx, "Starting %s, version: %s, storage path: %s", Name, Version, storagePath)
-
-	// Init Database
+	// init database
 	db, err := database.New(ctx)
 	if err != nil {
-		return ctx, fmt.Errorf("failed to initialize database: %w", err)
+		fmt.Fprintf(os.Stderr, "failed to initialize database: %s\n", err)
+		return 1
 	}
 	ctx = database.IntoContext(ctx, db)
-	dbClose := func() error { db.Close(); return nil }
-	cleanUpFuncs = append(cleanUpFuncs, dbClose)
+	defer db.Close()
 	xlog.Debug(ctx, "Database initialized")
 
-	// Init Config
+	// init config
 	ctx, err = config.Init(ctx)
 	if err != nil {
-		return ctx, fmt.Errorf("failed to initialize config: %w", err)
+		fmt.Fprintf(os.Stderr, "failed to initialize config: %s\n", err)
+		return 1
 	}
 	xlog.Debug(ctx, "Config initialized")
 
-	// Set log level
-	if initLogLevel != "debug" {
-		cfgLogLevel, err := config.Get[string](ctx, "logLevel")
-		if err != nil {
-			return ctx, fmt.Errorf("failed to get log level from config: %w", err)
-		}
-		if err := log.SetLevel(cfgLogLevel); err != nil {
-			return ctx, fmt.Errorf("failed to set log level: %w", err)
-		}
+	// set log level
+	cfgLogLevel, err := config.Get[string](ctx, "logLevel")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to get log level from config: %s\n", err)
+		return 1
+	}
+	if err := log.SetLevel(cfgLogLevel); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to set log level: %s\n", err)
+		return 1
 	}
 
 	// Update check
 	updateNotify, err := config.Get[bool](ctx, "updateNotify")
 	if err != nil {
-		return ctx, fmt.Errorf("failed to get updateNotify from config: %w", err)
+		fmt.Fprintf(os.Stderr, "failed to get updateNotify from config: %s\n", err)
+		return 1
 	}
 	if updateNotify {
 		// get last update check time from config
 		tStr, err := config.Get[string](ctx, "lastUpdateCheck")
 		if err != nil {
-			return ctx, fmt.Errorf("failed to get lastUpdateCheck from config: %w", err)
+			fmt.Fprintf(os.Stderr, "failed to get lastUpdateCheck from config: %s\n", err)
+			return 1
 		}
 		t, err := time.Parse(time.RFC3339, tStr)
 		if err != nil {
-			return ctx, fmt.Errorf("failed to parse lastUpdateCheck time: %w", err)
+			fmt.Fprintf(os.Stderr, "failed to parse lastUpdateCheck time: %s\n", err)
+			return 1
 		}
 
 		// once a day, very lightweight check, to be polite to github
@@ -147,12 +121,14 @@ func startup(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 
 			// update check time in config
 			if err := config.Set(ctx, "lastUpdateCheck", time.Now().Format(time.RFC3339)); err != nil {
-				return ctx, fmt.Errorf("failed to set lastUpdateCheck in config: %w", err)
+				fmt.Fprintf(os.Stderr, "failed to set lastUpdateCheck in config: %s\n", err)
+				return 1
 			}
 
 			updateAvailable, err := update.Check(ctx, Version)
 			if err != nil {
-				return ctx, fmt.Errorf("failed to check for updates: %w", err)
+				fmt.Fprintf(os.Stderr, "failed to check for updates: %s\n", err)
+				return 1
 			}
 			if updateAvailable {
 				fmt.Println("Update available! Run 'goweb update check' to see details.")
@@ -160,29 +136,43 @@ func startup(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 		}
 	}
 
-	// Init daemon manager
-	manager := &daemon_manager.DaemonManager{
-		PIDFilePath:   filepath.Join(storagePath, "daemon.pid"),
-		ReadyTimeout:  10 * time.Second,
-		StopTimeout:   10 * time.Second,
-		DaemonRunArgs: []string{"daemon", "run"},
+	// init app
+	app := &cli.Command{
+		Name:    Name,
+		Version: Version,
+		Usage:   "example CLI application with web capabilities",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "log",
+				Value: DefaultLogLevel,
+				Usage: "override log level (debug|info|warn|error|none)",
+			},
+			&cli.BoolFlag{
+				Name:    "yes",
+				Aliases: []string{"y"},
+				Usage:   "answer yes to all prompts",
+			},
+		},
+		Commands: []*cli.Command{
+			update.Command,
+			database.Command,
+		},
+		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+			logLevel := cmd.String("log")
+			if logLevel != DefaultLogLevel {
+				if err := log.SetLevel(logLevel); err != nil {
+					return ctx, err
+				}
+			}
+			return ctx, nil
+		},
 	}
-	ctx, err = daemon_manager.IntoContext(ctx, manager)
-	if err != nil {
-		return ctx, fmt.Errorf("failed to insert daemon manager into context: %w", err)
+
+	if err := app.Run(ctx, os.Args); err != nil {
+		log.Error(err)
+		fmt.Fprintln(os.Stderr, err)
+		return 1
 	}
-	xlog.Debug(ctx, "Daemon manager initialized")
+	return 0
 
-	// Init other components
-
-	return ctx, nil
-}
-
-func cleanup() {
-	// call clean up funcs in reverse order
-	for i := len(cleanUpFuncs) - 1; i >= 0; i-- {
-		if err := cleanUpFuncs[i](); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to clean up: %v\n", err)
-		}
-	}
 }

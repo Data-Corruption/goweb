@@ -1,5 +1,4 @@
-// Package storagepath is the path to the directory where all data related to the tool is stored.
-package storagepath
+package version
 
 import (
 	"context"
