@@ -319,5 +319,5 @@ if (( added_user )); then
   echo "Added $invoker to group $APP_NAME."
   echo "➡ Re-login (or run: newgrp $APP_NAME) before using the CLI without sudo."
 elif [[ -z "${SUDO_USER:-}" || "${SUDO_USER:-}" == "root" ]]; then
-  echo "Tip: add users with: sudo usermod -aG $APP_NAME <user>"
+  echo "Tip: allow users with: sudo usermod -aG $APP_NAME <user>"
 fi

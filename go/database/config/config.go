@@ -27,7 +27,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"goweb/go/commands/database"
+	"goweb/go/database"
+	"goweb/go/database/helpers"
 
 	"github.com/Data-Corruption/lmdb-go/lmdb"
 	"github.com/Data-Corruption/lmdb-go/wrap"
@@ -178,65 +179,26 @@ func Set[T any](ctx context.Context, key string, val T) error {
 	return nil
 }
 
-type VersionCheckResult int
-
-const (
-	Uninitialized VersionCheckResult = iota
-	Outdated
-	UpToDate
-	Unknown
-)
-
-// VersionCheck checks the version of the configuration stored in the database.
-func (cfg *Config) VersionCheck() (VersionCheckResult, error) {
-	buf, err := cfg.DB.Read(database.ConfigDBIName, []byte("version"))
-	if err != nil {
-		if lmdb.IsNotFound(err) {
-			return Uninitialized, nil
-		}
-		return Unknown, fmt.Errorf("failed to read configuration version: %w", err)
-	}
-	discVersion := string(buf)
-	if discVersion == cfg.Version {
-		return UpToDate, nil
-	} else {
-		if _, ok := cfg.Schemas[discVersion]; ok {
-			return Outdated, nil
-		}
-		return Unknown, fmt.Errorf("unknown version '%s' found in config", discVersion)
-	}
-}
-
 // Migrate migrates or initializes the configuration in the database.
 func (cfg *Config) Migrate() error {
 	return cfg.DB.Update(func(txn *lmdb.Txn) error {
-		// get version on disk
-		buf, err := txn.Get(cfg.DBI, []byte("version"))
-		if err != nil {
-			if lmdb.IsNotFound(err) {
-				// no version found, initialize config
-				for key, value := range cfg.Schemas[cfg.Version] {
-					defaultValue := value.DefaultValue()
-					data, err := json.Marshal(defaultValue)
-					if err != nil {
-						return fmt.Errorf("failed to marshal default value for key '%s': %w", key, err)
-					}
-					if err := txn.Put(cfg.DBI, []byte(key), data, 0); err != nil {
-						return fmt.Errorf("failed to write initial value for key '%s': %w", key, err)
-					}
-				}
-				fmt.Printf("config initialized with version '%s'\n", cfg.Version)
-				return nil
+		var discVersion string
+		if err := helpers.GetAndUnmarshal(txn, cfg.DBI, []byte("version"), &discVersion); err != nil {
+			if !lmdb.IsNotFound(err) {
+				return fmt.Errorf("failed to get config version: %w", err)
 			}
-			// other error reading version
-			return fmt.Errorf("failed to read configuration version: %w", err)
+			// no version found, initialize config
+			for key, value := range cfg.Schemas[cfg.Version] {
+				defaultValue := value.DefaultValue()
+				if err := helpers.MarshalAndPut(txn, cfg.DBI, []byte(key), defaultValue); err != nil {
+					return fmt.Errorf("failed to write initial value for key '%s': %w", key, err)
+				}
+			}
+			fmt.Printf("config initialized with version '%s'\n", cfg.Version)
+			return nil
 		}
 
 		// check if version is the latest
-		var discVersion string
-		if err := json.Unmarshal(buf, &discVersion); err != nil {
-			return fmt.Errorf("failed to unmarshal configuration version: %w", err)
-		}
 		if discVersion == cfg.Version {
 			return nil
 		}
@@ -248,7 +210,7 @@ func (cfg *Config) Migrate() error {
 			if err := migrationFunc(txn, cfg.DBI, cfg.Schemas); err != nil {
 				return fmt.Errorf("migration failed: %w", err)
 			}
-			if err := txn.Put(cfg.DBI, []byte("version"), []byte(cfg.Version), 0); err != nil {
+			if err := helpers.MarshalAndPut(txn, cfg.DBI, []byte("version"), cfg.Version); err != nil {
 				return fmt.Errorf("failed to write new version '%s': %w", cfg.Version, err)
 			}
 			fmt.Printf("config migration successful: %s\n", migratePath)
@@ -256,5 +218,26 @@ func (cfg *Config) Migrate() error {
 		}
 		// migration function not found
 		return fmt.Errorf("unsupported migration path: from '%s' to '%s'. No migration function registered for this transition", discVersion, cfg.Version)
+	})
+}
+
+// Print prints the current configuration to stdout.
+// This is useful for debugging and verifying the current configuration state.
+func (cfg *Config) Print() error {
+	return cfg.DB.View(func(txn *lmdb.Txn) error {
+		fmt.Printf("Current Configuration (Version: %s):\n", cfg.Version)
+		for key, value := range cfg.Schemas[cfg.Version] {
+			// skip sensitive fields like this
+			// if key == "authToken" {
+			//   fmt.Printf("%s: [REDACTED]\n", key)
+			//   continue
+			// }
+			data, err := value.GetAny(key, cfg.DB)
+			if err != nil {
+				return fmt.Errorf("failed to get config key '%s': %w", key, err)
+			}
+			fmt.Printf("%s: %v\n", key, data)
+		}
+		return nil
 	})
 }

@@ -4,16 +4,24 @@ package database
 import (
 	"context"
 	"errors"
+	"goweb/go/database/datapath"
 	"path/filepath"
-
-	"goweb/go/storage/storagepath"
 
 	"github.com/Data-Corruption/lmdb-go/wrap"
 )
 
+/*
+Database Layout:
+
+Config - see config package for details.
+
+Add other db info here.
+
+*/
+
 const (
 	ConfigDBIName = "config"
-	// Add more DBI names as needed, e.g., UserDBIName, SessionDBIName, etc.
+	// Add more DBI names as needed, e.g., UserDBIName, SessionDBIName, etc. Also update the slice below to include them.
 	// WARNING: If you add more DBIs you'll need to clean and reinitialize the database from scratch pretty sure.
 )
 
@@ -31,11 +39,13 @@ func FromContext(ctx context.Context) *wrap.DB {
 }
 
 func New(ctx context.Context) (*wrap.DB, error) {
-	path := storagepath.FromContext(ctx)
+	path := datapath.FromContext(ctx)
 	if path == "" {
 		return nil, errors.New("nexus data path not set before database initialization")
 	}
-	db, _, err := wrap.New(filepath.Join(path, "db"), []string{ConfigDBIName}) // If you add more DBIs, include them in the slice
+	db, _, err := wrap.New(filepath.Join(path, "db"),
+		[]string{ConfigDBIName}, // If you add more DBIs, update this slice as well.
+	)
 	if err != nil {
 		db.Close()
 		return nil, err

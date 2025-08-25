@@ -9,10 +9,11 @@ import (
 	"syscall"
 	"time"
 
-	"goweb/go/commands/database"
-	"goweb/go/commands/update"
-	"goweb/go/storage/config"
-	"goweb/go/storage/storagepath"
+	"goweb/go/commands"
+	"goweb/go/database"
+	"goweb/go/database/config"
+	"goweb/go/database/datapath"
+	"goweb/go/update"
 	"goweb/go/version"
 
 	"github.com/Data-Corruption/stdx/xlog"
@@ -21,8 +22,7 @@ import (
 
 // Template variables ---------------------------------------------------------
 
-// Replace with your application name
-const Name = "goweb" // used for root command name and also in default storage path
+const Name = "goweb" // root command name
 
 // ----------------------------------------------------------------------------
 
@@ -31,8 +31,7 @@ const (
 	DataPath        = "/var/lib/" + Name
 )
 
-// Version set by build script
-var Version string
+var Version string // set by build script
 
 func main() { os.Exit(run()) }
 
@@ -44,12 +43,12 @@ func run() int {
 	// insert version for update stuff
 	ctx = version.IntoContext(ctx, Version)
 
-	// if missing data dir, exit
+	// ensure data dir exists
 	if _, err := os.Stat(DataPath); os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "data path does not exist: %s\n", DataPath)
 		return 1
 	}
-	ctx = storagepath.IntoContext(ctx, DataPath)
+	ctx = datapath.IntoContext(ctx, DataPath)
 
 	// get log path
 	logPath := filepath.Join(DataPath, "logs")
@@ -115,7 +114,7 @@ func run() int {
 			return 1
 		}
 
-		// once a day, very lightweight check, to be polite to github
+		// once a day, very lightweight check
 		if time.Since(t) > 24*time.Hour {
 			xlog.Debug(ctx, "Checking for updates...")
 
@@ -125,7 +124,7 @@ func run() int {
 				return 1
 			}
 
-			updateAvailable, err := update.Check(ctx, Version)
+			updateAvailable, err := update.Check(ctx)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "failed to check for updates: %s\n", err)
 				return 1
@@ -154,8 +153,7 @@ func run() int {
 			},
 		},
 		Commands: []*cli.Command{
-			update.Command,
-			database.Command,
+			commands.Update,
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			logLevel := cmd.String("log")
@@ -168,11 +166,11 @@ func run() int {
 		},
 	}
 
+	// run app
 	if err := app.Run(ctx, os.Args); err != nil {
 		log.Error(err)
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	return 0
-
 }
