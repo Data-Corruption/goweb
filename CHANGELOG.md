@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.0.11] - 2025-08-28
+
+update test
+
 ## [v0.0.10] - 2025-08-28
 
 small fix
