@@ -26,16 +26,19 @@ const Name = "goweb" // root command name
 
 // ----------------------------------------------------------------------------
 
-const (
-	DefaultLogLevel = "warn"
-	DataPath        = "/var/lib/" + Name
-)
+const DefaultLogLevel = "warn"
 
 var Version string // set by build script
 
-func main() { os.Exit(run()) }
+func main() {
+	exitCode, err := run()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+	}
+	os.Exit(exitCode)
+}
 
-func run() int {
+func run() (int, error) {
 	// base context with interrupt/termination handling
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -43,25 +46,27 @@ func run() int {
 	// insert version for update stuff
 	ctx = version.IntoContext(ctx, Version)
 
-	// ensure data dir exists
-	if _, err := os.Stat(DataPath); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "data path does not exist: %s\n", DataPath)
-		return 1
+	// get data path
+	dataPath, err := datapath.Get(Name)
+	if err != nil {
+		return 1, fmt.Errorf("failed to get data path: %w", err)
 	}
-	ctx = datapath.IntoContext(ctx, DataPath)
+	// create data dir if it doesn't exist
+	if err := os.MkdirAll(dataPath, 0755); err != nil {
+		return 1, fmt.Errorf("failed to create data path: %w", err)
+	}
+	ctx = datapath.IntoContext(ctx, dataPath)
 
 	// get log path
-	logPath := filepath.Join(DataPath, "logs")
+	logPath := filepath.Join(dataPath, "logs")
 	if err := os.MkdirAll(logPath, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create log path: %s\n", err)
-		return 1
+		return 1, fmt.Errorf("failed to create log path: %w", err)
 	}
 
 	// init logger
 	log, err := xlog.New(logPath, DefaultLogLevel)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to initialize logger: %s\n", err)
-		return 1
+		return 1, fmt.Errorf("failed to initialize logger: %w", err)
 	}
 	ctx = xlog.IntoContext(ctx, log)
 	defer log.Close()
@@ -69,8 +74,7 @@ func run() int {
 	// init database
 	db, err := database.New(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to initialize database: %s\n", err)
-		return 1
+		return 1, fmt.Errorf("failed to initialize database: %w", err)
 	}
 	ctx = database.IntoContext(ctx, db)
 	defer db.Close()
@@ -79,39 +83,33 @@ func run() int {
 	// init config
 	ctx, err = config.Init(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to initialize config: %s\n", err)
-		return 1
+		return 1, fmt.Errorf("failed to initialize config: %w", err)
 	}
 	xlog.Debug(ctx, "Config initialized")
 
 	// set log level
 	cfgLogLevel, err := config.Get[string](ctx, "logLevel")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to get log level from config: %s\n", err)
-		return 1
+		return 1, fmt.Errorf("failed to get log level from config: %w", err)
 	}
 	if err := log.SetLevel(cfgLogLevel); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to set log level: %s\n", err)
-		return 1
+		return 1, fmt.Errorf("failed to set log level: %w", err)
 	}
 
 	// Update check
 	updateNotify, err := config.Get[bool](ctx, "updateNotify")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to get updateNotify from config: %s\n", err)
-		return 1
+		return 1, fmt.Errorf("failed to get updateNotify from config: %w", err)
 	}
 	if updateNotify {
 		// get last update check time from config
 		tStr, err := config.Get[string](ctx, "lastUpdateCheck")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to get lastUpdateCheck from config: %s\n", err)
-			return 1
+			return 1, fmt.Errorf("failed to get lastUpdateCheck from config: %w", err)
 		}
 		t, err := time.Parse(time.RFC3339, tStr)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to parse lastUpdateCheck time: %s\n", err)
-			return 1
+			return 1, fmt.Errorf("failed to parse lastUpdateCheck time: %w", err)
 		}
 
 		// once a day, very lightweight check
@@ -120,14 +118,12 @@ func run() int {
 
 			// update check time in config
 			if err := config.Set(ctx, "lastUpdateCheck", time.Now().Format(time.RFC3339)); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to set lastUpdateCheck in config: %s\n", err)
-				return 1
+				return 1, fmt.Errorf("failed to set lastUpdateCheck in config: %w", err)
 			}
 
 			updateAvailable, err := update.Check(ctx)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "failed to check for updates: %s\n", err)
-				return 1
+				return 1, fmt.Errorf("failed to check for updates: %w", err)
 			}
 			if updateAvailable {
 				fmt.Println("Update available! Run 'goweb update check' to see details.")
@@ -169,8 +165,7 @@ func run() int {
 	// run app
 	if err := app.Run(ctx, os.Args); err != nil {
 		log.Error(err)
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return 1, fmt.Errorf("app run failed: %w", err)
 	}
-	return 0
+	return 0, nil
 }

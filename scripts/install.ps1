@@ -1,52 +1,97 @@
-# Transparent WSL app installation script for Windows
-#
-# Default (installs latest version to /usr/local/bin in WSL):
-#   Set-ExecutionPolicy Bypass -Scope Process -Force; iex "& { $(irm https://raw.githubusercontent.com/OWNER/REPO/main/scripts/install.ps1) }"
+# Transparent WSL app installation script for Windows (non-admin)
+# Usage: powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 [-Version v1.2.3]
 
+[CmdletBinding()]
+param(
+  [string]$Version = ""  # -Version v1.2.3 ; empty = latest
+)
 
 # Template variables ----------------------------------------------------------
 
-$OWNER="Data-Corruption"
-$REPO="goweb"
-$APP_NAME="goweb"
+$Owner   = "Data-Corruption"
+$Repo    = "goweb"
+$AppName = "goweb"
+$Service = $true
 
-# Startup ---------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
-$LINUX_INSTALL_CMD = "curl -sSfL https://raw.githubusercontent.com/$OWNER/$REPO/main/scripts/install.sh | sudo bash"
-$dataDir = [Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData)
-$appDir = Join-Path -Path $dataDir -ChildPath $APP_NAME
-$bridgeScript = Join-Path -Path $appDir -ChildPath "$APP_NAME.ps1"
+$ErrorActionPreference = "Stop"
 
-# ensure admin perms
-if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-  Write-Warning "You do not have Administrator rights to run this script! Please re-run as Administrator."
-  exit 1
+function Fail($msg) { Write-Error $msg; exit 1 }
+function Info($msg) { Write-Host $msg }
+
+# ensure WSL is installed and a default distro exists
+try { $null = & wsl.exe --status 2>$null } catch { Fail "WSL not installed/enabled. Enable WSL and install a distro, then re-run." }
+$wslStatus = & wsl.exe --status 2>$null
+if (-not ($wslStatus -match 'Default Distribution:\s+\S+')) {
+  Fail "No default WSL distribution set. Run:  wsl -s <distro>  then re-run."
 }
 
-# ensure app dir exists
-if (-not (Test-Path $appDir)) {
-  New-Item -ItemType Directory -Path $appDir | Out-Null
-}
+# ensure it's running
+try { $null = & wsl.exe -e true } catch { Fail "Failed to start WSL. Open a WSL shell once, then re-run." }
 
-# ensure app dir is in system PATH
-$currentPATH = [Environment]::GetEnvironmentVariable("PATH", "Machine")
-$pathItems = $currentPATH -split ';' | ForEach-Object { $_.TrimEnd('\') }
-if (-not ($pathItems -contains $appDir.TrimEnd('\'))) {
-  $newPath = "$currentPATH;$appDir"
-  [Environment]::SetEnvironmentVariable("PATH", $newPath, "Machine")
-}
+# if service, ensure systemd is enabled
+if ($Service) {
+  try {
+    $out = & wsl.exe -e sh -lc 'systemctl --user --version 2>/dev/null | head -n1'
+  } catch {
+      Fail @"
+Failed to check systemd status. To enable WSL systemd (user), follow:
+1) In WSL:  sudo sh -c 'printf "[boot]\nsystemd=true\n" >> /etc/wsl.conf'
+2) In Windows:  wsl --shutdown
+3) Re-open your WSL distro and re-run this installer.
 
-# write the bridge file to the app dir and unblock it
-$bridgeScriptContent = @"
-# Auto-generated script that bridges Windows to WSL for the app '`$APP_NAME'
-param(`$args)
-`$cwd = (Get-Location).Path
-`$wslCwd = wsl -- bash -c "wslpath '`$cwd'"
-wsl -- bash -c "cd `$wslCwd; $APP_NAME `$args"
+If systemd remains disabled, user services may not work and service installation can fail.
 "@
+  }
+}
 
-Set-Content -Path $bridgeScript -Value $bridgeScriptContent
-Unblock-File -Path $bridgeScript
+# run linux install script in WSL
+$linuxInstallCmd = if ([string]::IsNullOrWhiteSpace($Version)) {
+  "curl -sSfL https://raw.githubusercontent.com/$Owner/$Repo/main/scripts/install.sh | bash -s --"
+} else {
+  "curl -sSfL https://raw.githubusercontent.com/$Owner/$Repo/main/scripts/install.sh | bash -s -- $Version"
+}
+Info "Running Linux installer inside WSL..."
+& wsl.exe -e sh -lc "$linuxInstallCmd"
+if ($LASTEXITCODE -ne 0) { Fail "Linux install command failed with exit code $LASTEXITCODE." }
 
-# execute linux install command in WSL
-wsl -- bash -c "$LINUX_INSTALL_CMD"
+# create windows shim
+$shimRoot = Join-Path $env:LOCALAPPDATA "Programs"
+$shimDir  = Join-Path $shimRoot $AppName
+New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
+
+$shimPathCmd = Join-Path $shimDir "$AppName.cmd"
+$shimContent = @"
+@echo off
+setlocal enabledelayedexpansion
+for /f "usebackq tokens=*" %%i in (\`wsl.exe sh -lc "wslpath '%cd%'"\`) do set "WSLCD=%%i"
+wsl.exe --cd "!WSLCD!" -- $AppName %*
+endlocal
+"@
+Set-Content -Path $shimPathCmd -Value $shimContent -Encoding ASCII
+
+# ensure shim dir on USER PATH ------------------------------------------------
+
+function PathSplit([string]$path) {
+  if ([string]::IsNullOrEmpty($path)) { @() } else { $path.Split(';') | Where-Object { $_ -ne "" } }
+}
+function PathHas([string]$path, [string]$dir) {
+  (PathSplit $path | Where-Object { $_.TrimEnd('\') -ieq $dir.TrimEnd('\') }) -ne $null
+}
+
+$userPath = [Environment]::GetEnvironmentVariable("PATH","User")
+if (-not (PathHas $userPath $shimDir)) {
+  $newUserPath = if ([string]::IsNullOrEmpty($userPath)) { $shimDir } else { "$userPath;$shimDir" }
+  [Environment]::SetEnvironmentVariable("PATH", $newUserPath, "User")  # persists for the user
+  # also update current session so this shell can use it immediately
+  if (-not (PathHas $env:PATH $shimDir)) { $env:PATH = "$env:PATH;$shimDir" }
+  Write-Host "Added to user PATH: $shimDir"
+  Write-Host "Open a new terminal for other shells to pick it up."
+} else {
+  Write-Host "User PATH already contains: $shimDir"
+}
+
+Write-Host ""
+Write-Host "✅ Installed Windows shim → $shimPathCmd"
+Write-Host "   Try:  $AppName -v"

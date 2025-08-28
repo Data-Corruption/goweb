@@ -9,6 +9,7 @@ import (
 
 	"github.com/Data-Corruption/stdx/xhttp"
 	"github.com/Data-Corruption/stdx/xlog"
+	"github.com/Data-Corruption/stdx/xnet"
 	"github.com/urfave/cli/v3"
 )
 
@@ -16,6 +17,11 @@ var Serve = &cli.Command{
 	Name:  "serve",
 	Usage: "starts a basic web server",
 	Action: func(ctx context.Context, cmd *cli.Command) error {
+		// wait for network (systemd user mode Wants/After is unreliable)
+		if err := xnet.Wait(ctx, 0); err != nil {
+			return fmt.Errorf("failed to wait for network: %w", err)
+		}
+
 		var srv *xhttp.Server
 
 		// hello world handler

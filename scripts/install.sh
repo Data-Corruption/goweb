@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 
 # Generic install / update script, for self-contained apps targeting linux x86_64/amd64.
-# Shared app data, regardless of user, limited to those added to the app group.
 # App's daemon, if present, is just a sub-command.
 #
 # Usage:
-#   curl -sSfL https://raw.githubusercontent.com/OWNER/REPO/main/scripts/install.sh | sudo bash -s -- [VERSION]
+#   curl -sSfL https://raw.githubusercontent.com/OWNER/REPO/main/scripts/install.sh | bash -s -- [VERSION]
 #
 # Arguments:
 #   [VERSION] Optional tag (e.g. v1.2.3). Default = latest
@@ -23,15 +22,18 @@ SERVICE_ARGS="serve"
 # Startup ---------------------------------------------------------------------
 
 set -euo pipefail
-umask 022
+umask 077 # lock that shit down frfr
 
-INSTALL_PATH="/usr/local/bin/$APP_NAME"
-DATA_PATH="/var/lib/$APP_NAME"
+INSTALL_PATH="$HOME/.local/bin/$APP_NAME"
+DATA_PATH="$HOME/.$APP_NAME"
 
 SERVICE_NAME="$APP_NAME.service"
-SERVICE_PATH="/etc/systemd/system/$SERVICE_NAME"
+SERVICE_PATH="$HOME/.config/systemd/user/$SERVICE_NAME"
 ACTIVE_TIMEOUT=10 # seconds to wait until service to become active
 HEALTH_TIMEOUT=30 # seconds to wait until service writes healthy file signal
+
+HEALTH_PATH="$DATA_PATH/.health"
+ENV_PATH="$DATA_PATH/$APP_NAME.env"
 
 VERSION="${1:-latest}"
 BIN_ASSET_NAME="linux-amd64.gz"
@@ -49,8 +51,8 @@ was_active=0
 unit_known=0
 rollback() {
   if [[ "$SERVICE" == "true" && "$unit_known" == "1" ]]; then
-    systemctl stop "$SERVICE_NAME" >/dev/null 2>&1 || true
-    systemctl reset-failed "$SERVICE_NAME" >/dev/null 2>&1 || true
+    systemctl --user stop "$SERVICE_NAME" >/dev/null 2>&1 || true
+    systemctl --user reset-failed "$SERVICE_NAME" >/dev/null 2>&1 || true
   fi
 
   if [[ -f "$old_bin" ]]; then
@@ -59,16 +61,16 @@ rollback() {
   fi
 
   if [[ "$SERVICE" == "true" && "$unit_known" == "1" ]]; then
-    systemctl daemon-reload >/dev/null 2>&1 || true
+    systemctl --user daemon-reload >/dev/null 2>&1 || true
 
     if [[ "$was_enabled" == "1" ]]; then
-      systemctl enable "$SERVICE_NAME"  >/dev/null 2>&1 || true
+      systemctl --user enable "$SERVICE_NAME"  >/dev/null 2>&1 || true
     else
-      systemctl disable "$SERVICE_NAME" >/dev/null 2>&1 || true
+      systemctl --user disable "$SERVICE_NAME" >/dev/null 2>&1 || true
     fi
 
     if [[ "$was_active" == "1" ]]; then
-      systemctl start "$SERVICE_NAME"   >/dev/null 2>&1 || true
+      systemctl --user start "$SERVICE_NAME"   >/dev/null 2>&1 || true
     fi
   fi
 }
@@ -98,9 +100,9 @@ if [[ "$uname_m" != "x86_64" && "$uname_m" != "amd64" ]]; then
   exit 1
 fi
 
-# if not root, exit
-if [[ $EUID -ne 0 ]]; then
-  echo "🔴 This script must be run as root. Please run with sudo." >&2
+# must not be root
+if [[ $EUID -eq 0 ]]; then
+  echo "🔴 This script must not be run as root. Please run as a non-root user." >&2
   exit 1
 fi
 
@@ -113,48 +115,27 @@ for bin in "${required_bins[@]}"; do
   fi
 done
 
+# create necessary directories
+mkdir -p "$(dirname "$SERVICE_PATH")" "$DATA_PATH"
+
+# if service, check systemd version and track prior state
 if [[ "$SERVICE" == "true" ]]; then
   # require systemd ≥ 245
-  systemdVersion=$(systemctl --version | head -n1 | awk '{print $2}')
+  systemdVersion=$(systemctl --user --version | head -n1 | awk '{print $2}')
   if (( systemdVersion < 245 )); then
     echo "Error: systemd ≥ 245 required, found $systemdVersion" >&2
     exit 1
   fi
   # track prior systemd state (for rollback)
-  if systemctl cat "$SERVICE_NAME" >/dev/null 2>&1 || [[ -f "$SERVICE_PATH" ]]; then
+  if systemctl --user cat "$SERVICE_NAME" >/dev/null 2>&1 || [[ -f "$SERVICE_PATH" ]]; then
     unit_known=1
-    systemctl is-enabled --quiet "$SERVICE_NAME" && was_enabled=1 || true
-    systemctl is-active  --quiet "$SERVICE_NAME" && was_active=1  || true
+    systemctl --user is-enabled --quiet "$SERVICE_NAME" && was_enabled=1 || true
+    systemctl --user is-active  --quiet "$SERVICE_NAME" && was_active=1  || true
   fi
 fi
 
 # looks good, print info
 echo "📦 Installing $APP_NAME $VERSION ..."
-
-# User / Dirs -----------------------------------------------------------------
-
-# system group
-getent group "$APP_NAME" >/dev/null || groupadd --system "$APP_NAME"
-
-# system user for daemon
-if ! id -u "$APP_NAME" >/dev/null 2>&1; then
-  NOLOGIN="$(command -v nologin || true)"
-  useradd --system --home "$DATA_PATH" --shell "${NOLOGIN:-/usr/sbin/nologin}" --gid "$APP_NAME" "$APP_NAME"
-fi
-
-# data / env config dir
-install -d -o root -g "$APP_NAME" -m 02770 "$DATA_PATH"
-install -d -o root -g "$APP_NAME" -m 02770 "/etc/$APP_NAME"
-
-# add invoking (non-root) user to the group so they can use the CLI without sudo
-added_user=0
-invoker="${SUDO_USER:-}"
-if [[ -n "$invoker" && "$invoker" != "root" ]]; then
-  if ! id -nG "$invoker" 2>/dev/null | tr ' ' '\n' | grep -qx "$APP_NAME"; then
-    usermod -aG "$APP_NAME" "$invoker"
-    added_user=1
-  fi
-fi
 
 # Download the binary ---------------------------------------------------------
 
@@ -188,7 +169,9 @@ echo "Installing binary ..."
 install -Dm755 "$gzip_out" "$INSTALL_PATH" || { echo "🔴 Failed to install binary."; exit 1; }
 
 # verify install / get version
-EFFECTIVE_VER="$("$INSTALL_PATH" -v 2>/dev/null | head -n1)" || { echo "🔴 Failed to verify installation of $INSTALL_PATH" >&2; exit 1; }
+out="$("$INSTALL_PATH" -v 2>/dev/null || true)"
+EFFECTIVE_VER="${out%%$'\n'*}"
+[[ -n "$EFFECTIVE_VER" ]] || { echo "🔴 Failed to verify..."; exit 1; }
 
 # Service ---------------------------------------------------------------------
 
@@ -200,56 +183,41 @@ if [[ "$SERVICE" == "true" ]]; then
   cat >"$SERVICE_PATH" <<EOF
 [Unit]
 Description=${SERVICE_DESC}
-After=network-online.target
-Wants=network-online.target
 StartLimitIntervalSec=600
 StartLimitBurst=5
+# FYI: network-online.target is kinda fucked in the user manager for some reason.
+# Using in cases where it works. App will probs need to handle unready net starts gracefully with retries.
+Wants=network-online.target
+After=network-online.target
 
 [Service]
-User=${APP_NAME}
-Group=${APP_NAME}
-WorkingDirectory=${DATA_PATH}
 ExecStart=${INSTALL_PATH} ${SAFE_ARGS}
+WorkingDirectory=${DATA_PATH}
 Restart=always
-RestartSec=5
-
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=${DATA_PATH} /etc/${APP_NAME}
-LockPersonality=yes
-MemoryDenyWriteExecute=yes
+RestartSec=3
 LimitNOFILE=65535
-UMask=0007
-RestrictSUIDSGID=yes
-ProtectClock=yes
-ProtectHostname=yes
-ProtectKernelModules=yes
-ProtectKernelTunables=yes
-ProtectControlGroups=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
-EnvironmentFile=-/etc/${APP_NAME}/${APP_NAME}.env
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
+EnvironmentFile=-${ENV_PATH}
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 EOF
 
-  # delete health file
-  rm -f "$DATA_PATH/health"
+  # delete health file if exists
+  HEALTH_PATH="$DATA_PATH/.health"
+  rm -f "$HEALTH_PATH"
 
   # enable and start/restart service
-  systemctl daemon-reload
-  systemctl enable "$SERVICE_NAME"
+  systemctl --user daemon-reload
+  systemctl --user enable "$SERVICE_NAME"
 
   # helper for getting restart count / parsing to integer
   get_restarts() {
     local unit="$1"
     local v
-    v="$(systemctl show -p NRestarts --value -- "$unit" 2>/dev/null || true)"
+    v="$(systemctl --user show -p NRestarts --value -- "$unit" 2>/dev/null || true)"
     # trim whitespace/newlines just in case
     v="${v//$'\n'/}"
     v="${v//[$' \t\r']/}"
@@ -261,19 +229,19 @@ EOF
   n_res_before="$(get_restarts "$SERVICE_NAME")"
 
   # start/restart
-  if systemctl is-active --quiet "$SERVICE_NAME"; then
+  if systemctl --user is-active --quiet "$SERVICE_NAME"; then
     echo "Restarting service..."
-    systemctl restart "$SERVICE_NAME"
+    systemctl --user restart "$SERVICE_NAME"
   else
     echo "Starting service..."
-    systemctl start "$SERVICE_NAME"
+    systemctl --user start "$SERVICE_NAME"
   fi
 
   # health gate
 
   # wait for service to become active
   deadline=$(( SECONDS + ${ACTIVE_TIMEOUT} ))
-  until systemctl is-active --quiet "$SERVICE_NAME"; do
+  until systemctl --user is-active --quiet "$SERVICE_NAME"; do
     if (( SECONDS >= deadline )); then
       echo "🔴 Service failed to reach active state within timeout." >&2
       exit 1
@@ -283,7 +251,7 @@ EOF
 
   # wait for health file creation or HEALTH_TIMEOUT
   deadline=$(( SECONDS + ${HEALTH_TIMEOUT} ))
-  until [[ -f "$DATA_PATH/health" ]]; do
+  until [[ -f "$HEALTH_PATH" ]]; do
     if (( SECONDS >= deadline )); then
       echo "🔴 Service failed to create health file within timeout." >&2
       exit 1
@@ -292,7 +260,7 @@ EOF
   done
 
   # final check (is active + no unexpected restarts)
-  if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+  if ! systemctl --user is-active --quiet "$SERVICE_NAME"; then
     echo "🔴 Service failed to reach healthy active state." >&2
     exit 1
   fi
@@ -304,20 +272,13 @@ EOF
 
   echo ""
   echo "🖧 Service: $SERVICE_NAME"
-  echo "    Status:  sudo systemctl status $SERVICE_NAME"
-  echo "    Start:   sudo systemctl start $SERVICE_NAME"
-  echo "    Restart: sudo systemctl restart $SERVICE_NAME"
-  echo "    Reset:   sudo systemctl reset-failed $SERVICE_NAME"
-  echo "    Env:     sudo \${EDITOR:-nano} /etc/$APP_NAME/$APP_NAME.env && sudo systemctl restart $SERVICE_NAME"
+  echo "    Status:  systemctl --user status $SERVICE_NAME"
+  echo "    Start:   systemctl --user start $SERVICE_NAME"
+  echo "    Restart: systemctl --user restart $SERVICE_NAME"
+  echo "    Reset:   systemctl --user reset-failed $SERVICE_NAME"
+  echo "    Env:     \${EDITOR:-nano} $DATA_PATH/$APP_NAME.env && systemctl --user restart $SERVICE_NAME"
 fi
 
 echo ""
 echo "🟢 Installed: $APP_NAME (${EFFECTIVE_VER:-$VERSION}) → $INSTALL_PATH"
-echo ""
-
-if (( added_user )); then
-  echo "Added $invoker to group $APP_NAME."
-  echo "➡ Re-login (or run: newgrp $APP_NAME) before using the CLI without sudo."
-elif [[ -z "${SUDO_USER:-}" || "${SUDO_USER:-}" == "root" ]]; then
-  echo "Tip: allow users with: sudo usermod -aG $APP_NAME <user>"
-fi
+echo "    Run:       $APP_NAME -v to verify (you may need to open a new terminal)"

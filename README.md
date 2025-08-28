@@ -20,15 +20,11 @@ A Go starter template for building CLI tools with an optional webserver daemon s
    * `scripts/*`
    * `go/main/main.go`
    * `go/update/update.go`
-3. Run setup:
-   ```sh
-   sudo ./scripts/dev-setup.sh
-   ```
-4. Build:
+3. Build:
    ```sh
    ./scripts/build.sh
    ```
-5. Test run:
+4. Test run:
    ```sh
    ./bin/linux-amd64 -h
    ```
