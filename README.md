@@ -60,21 +60,25 @@ These are example installation commands for the kind of app you can build with t
 ### Linux
 
 ```sh
-curl -sSfL https://raw.githubusercontent.com/Data-Corruption/goweb/main/scripts/install.sh | sudo bash -s
+curl -sSfL https://raw.githubusercontent.com/Data-Corruption/goweb/main/scripts/install.sh | bash -s
 ```
 
 With version override:
 
 ```sh
-curl -sSfL https://raw.githubusercontent.com/Data-Corruption/goweb/main/scripts/install.sh | sudo bash -s -- [VERSION]
+curl -sSfL https://raw.githubusercontent.com/Data-Corruption/goweb/main/scripts/install.sh | bash -s -- v1.0.0
 ```
 
 ### Windows (WSL)
 
-Open PowerShell as administrator:
+PowerShell:
 
 ```powershell
 Set-ExecutionPolicy Bypass -Scope Process -Force; iex "& { $(irm https://raw.githubusercontent.com/Data-Corruption/goweb/main/scripts/install.ps1) }"
+```
+
+```powershell
+Set-ExecutionPolicy Bypass -Scope Process -Force; iex "& { $(irm https://raw.githubusercontent.com/Data-Corruption/goweb/main/install.ps1) } -Version v1.0.0"
 ```
 
 This bridges PowerShell and WSL, adds the binary to PATH, and lets you run the tool directly from PowerShell.
@@ -85,7 +89,7 @@ After install, run:
 goweb -h
 ```
 
-> Replacing goweb with your app name of course. Also, `sudo` is only required for install; afterward, you can run the app normally.
+> Replacing goweb with your app name of course.
 
 ## Notes & Internals
 
