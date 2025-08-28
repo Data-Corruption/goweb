@@ -61,7 +61,7 @@ var Service = &cli.Command{
 				// hello world handler
 				mux := http.NewServeMux()
 				mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-					w.Write([]byte("Hello World 2\n"))
+					w.Write([]byte("Hello World 3\n"))
 				})
 				mux.HandleFunc("/update", func(w http.ResponseWriter, r *http.Request) {
 					// daemon update example. add auth ofc, etc
