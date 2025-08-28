@@ -86,11 +86,6 @@ func Update(ctx context.Context, detach bool) error {
 		return nil
 	}
 
-	// ensure root/sudo
-	if os.Geteuid() != 0 {
-		return fmt.Errorf("update must be run as root or with sudo")
-	}
-
 	lCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -112,7 +107,7 @@ func Update(ctx context.Context, detach bool) error {
 	}
 
 	// run the install command
-	pipeline := fmt.Sprintf("curl -sSfL %s | sudo bash -s", InstallScriptURL)
+	pipeline := fmt.Sprintf("curl -sSfL %s | bash -s", InstallScriptURL)
 	xlog.Debugf(ctx, "Running update command: %s", pipeline)
 	if detach {
 		lastDetach = time.Now()
