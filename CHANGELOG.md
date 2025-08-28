@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.0.10] - 2025-08-28
+
+small fix
+
 ## [v0.0.9] - 2025-08-28
 
 aww shit, here we go again...

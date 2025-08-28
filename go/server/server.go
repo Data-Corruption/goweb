@@ -55,7 +55,12 @@ func New(ctx context.Context, handler http.Handler) (*xhttp.Server, error) {
 		Handler:     handler,
 		AfterListen: func() {
 			// write health file
-			healthFilePath := filepath.Join(filepath.Dir(datapath.FromContext(ctx)), ".health")
+			dataPath := datapath.FromContext(ctx)
+			if dataPath == "" {
+				xlog.Errorf(ctx, "data path is not set")
+				return
+			}
+			healthFilePath := filepath.Join(dataPath, ".health")
 			xlog.Debugf(ctx, "writing health file: %s", healthFilePath)
 			if err := os.WriteFile(healthFilePath, []byte("ok"), 0644); err != nil {
 				xlog.Errorf(ctx, "failed to write health file: %s", err)

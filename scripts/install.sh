@@ -206,7 +206,6 @@ WantedBy=default.target
 EOF
 
   # delete health file if exists
-  HEALTH_PATH="$DATA_PATH/.health"
   rm -f "$HEALTH_PATH"
 
   # enable and start/restart service
@@ -269,9 +268,6 @@ EOF
     echo "🔴 Unexpected restart(s) detected." >&2
     exit 1
   fi
-
-  echo ""
-  echo " Modify service environment: \${EDITOR:-nano} $DATA_PATH/$APP_NAME.env"
 fi
 
 echo ""
