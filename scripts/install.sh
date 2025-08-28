@@ -17,7 +17,7 @@ APP_NAME="goweb"
 
 SERVICE="true"
 SERVICE_DESC="web server daemon for CLI application goweb"
-SERVICE_ARGS="serve"
+SERVICE_ARGS="service run"
 
 # Startup ---------------------------------------------------------------------
 
@@ -271,14 +271,12 @@ EOF
   fi
 
   echo ""
-  echo "🖧 Service: $SERVICE_NAME"
-  echo "    Status:  systemctl --user status $SERVICE_NAME"
-  echo "    Start:   systemctl --user start $SERVICE_NAME"
-  echo "    Restart: systemctl --user restart $SERVICE_NAME"
-  echo "    Reset:   systemctl --user reset-failed $SERVICE_NAME"
-  echo "    Env:     \${EDITOR:-nano} $DATA_PATH/$APP_NAME.env && systemctl --user restart $SERVICE_NAME"
+  echo " Modify service environment: \${EDITOR:-nano} $DATA_PATH/$APP_NAME.env"
 fi
 
 echo ""
 echo "🟢 Installed: $APP_NAME (${EFFECTIVE_VER:-$VERSION}) → $INSTALL_PATH"
-echo "    Run:       $APP_NAME -v to verify (you may need to open a new terminal)"
+echo "    Run:       '$APP_NAME -v' to verify (you may need to open a new terminal)"
+if [[ "$SERVICE" == "true" ]]; then
+echo "    Run:       '$APP_NAME service' for service management cheat sheet"
+fi

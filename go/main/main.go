@@ -150,8 +150,12 @@ func run() (int, error) {
 		},
 		Commands: []*cli.Command{
 			commands.Update,
+			commands.Service,
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+			// insert app name into context
+			ctx = context.WithValue(ctx, commands.AppNameKey{}, Name)
+			// handle log level override
 			logLevel := cmd.String("log")
 			if logLevel != DefaultLogLevel {
 				if err := log.SetLevel(logLevel); err != nil {
