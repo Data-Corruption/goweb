@@ -22,12 +22,6 @@ function Info($msg) { Write-Host $msg }
 
 # ensure WSL is installed and a default distro exists
 try { $null = & wsl.exe --status 2>&1 } catch { Fail "WSL not installed/enabled. Enable WSL and install a distro, then re-run." }
-$text = (& wsl.exe --status 2>&1 | Out-String)
-# accept either the explicit line or the leading '*' marker from `wsl -l -v`
-if ($text -notmatch 'Default Distribution:\s+\S+' -and ((& wsl.exe -l -v 2>&1 | Out-String) -notmatch '^\s*\*')) {
-  Fail "No default WSL distribution set. Run:  wsl -s <distro>  then re-run."
-}
-
 # ensure it's running
 try { $null = & wsl.exe -e true } catch { Fail "Failed to start WSL. Open a WSL shell once, then re-run." }
 
