@@ -17,7 +17,7 @@ $Service = $true
 
 $ErrorActionPreference = "Stop"
 
-function Fail($msg) { Write-Error $msg; exit 1 }
+function Fail($msg) { Write-Error 🔴 $msg; exit 1 }
 function Info($msg) { Write-Host $msg }
 
 # ensure WSL is installed and a default distro exists
@@ -48,7 +48,8 @@ $linuxInstallCmd = if ([string]::IsNullOrWhiteSpace($Version)) {
   "curl -sSfL https://raw.githubusercontent.com/$Owner/$Repo/main/scripts/install.sh | bash -s -- $Version"
 }
 Info "Running Linux installer inside WSL..."
-& wsl.exe -e sh -lc "$linuxInstallCmd"
+& $env:SystemRoot\System32\wsl.exe -e /bin/bash -lc $linuxInstallCmd
+Write-Host "" # spacer
 if ($LASTEXITCODE -ne 0) { Fail "Linux install command failed with exit code $LASTEXITCODE." }
 
 # create windows shim
@@ -59,9 +60,11 @@ New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
 $shimPathCmd = Join-Path $shimDir "$AppName.cmd"
 $shimContent = @"
 @echo off
-setlocal enabledelayedexpansion
-for /f "usebackq tokens=*" %%i in (\`wsl.exe sh -lc "wslpath '%cd%'"\`) do set "WSLCD=%%i"
-wsl.exe --cd "!WSLCD!" -- $AppName %*
+@echo off
+setlocal
+set "WSL=%SystemRoot%\System32\wsl.exe"
+set "APP=%~n0"
+"%WSL%" -e /bin/bash -lc 'exec "$0" "$@"' "%APP%" %*
 endlocal
 "@
 Set-Content -Path $shimPathCmd -Value $shimContent -Encoding ASCII
@@ -88,5 +91,5 @@ if (-not (PathHas $userPath $shimDir)) {
 }
 
 Write-Host ""
-Write-Host "✅ Installed Windows shim → $shimPathCmd"
+Write-Host "🟢 Installed Windows shim → $shimPathCmd"
 Write-Host "   Try:  $AppName -v"
