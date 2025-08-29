@@ -60,11 +60,10 @@ New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
 $shimPathCmd = Join-Path $shimDir "$AppName.cmd"
 $shimContent = @"
 @echo off
-@echo off
 setlocal
 set "WSL=%SystemRoot%\System32\wsl.exe"
 set "APP=%~n0"
-"%WSL%" -e /bin/bash -lc 'exec "$0" "$@"' "%APP%" %*
+"%WSL%" -e /bin/bash -l -c "exec %APP% \"$@\"" -- %*
 endlocal
 "@
 Set-Content -Path $shimPathCmd -Value $shimContent -Encoding ASCII
